@@ -1,0 +1,47 @@
+# --- secrets ---
+.env
+.env.local
+*.key
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- source PDFs (large, copyrighted — never commit) ---
+RAW_DATA/**
+!RAW_DATA/.gitkeep
+!RAW_DATA/README.md
+
+# --- derived data (machine-local) ---
+data/processed/**
+!data/processed/.gitkeep
+data/cache/**
+!data/cache/.gitkeep
+
+# --- model weights (downloaded per machine) ---
+models/
+.hf_cache/
+
+# --- logs & runs ---
+logs/
+*.log
+runs/
+outputs/
+
+# --- editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
