@@ -34,6 +34,15 @@ class TestTokenizer:
     def test_dosage_tokens_survive(self) -> None:
         assert "500mg" in tokenize("give 500mg orally")
 
+    def test_single_letter_medical_terms_survive(self) -> None:
+        """Dropping single characters would turn 'vitamin D' into 'vitamin'."""
+        assert tokenize("vitamin D deficiency") == ["vitamin", "d", "deficiency"]
+        assert "b" in tokenize("hepatitis B surface antigen")
+        assert "t" in tokenize("T cell lymphoma")
+
+    def test_common_function_words_still_dropped(self) -> None:
+        assert tokenize("the treatment of the patient") == ["treatment", "patient"]
+
     def test_token_id_is_stable_and_in_uint32_range(self) -> None:
         assert token_id("metformin") == token_id("metformin")
         assert 0 <= token_id("metformin") < 2**31

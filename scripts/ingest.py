@@ -61,7 +61,14 @@ def main() -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Parse and chunk only; print statistics, upload nothing",
+        help="Parse and chunk one document; print statistics, upload nothing. "
+        "Needs the embedding model (semantic chunking is embedding-based).",
+    )
+    parser.add_argument(
+        "--parse-only",
+        action="store_true",
+        help="Inspect PDF extraction with no model and no Qdrant. Runs anywhere, "
+        "including a laptop with no torch installed.",
     )
     parser.add_argument("--status", action="store_true", help="Show ingestion state and exit")
     args = parser.parse_args()
@@ -79,6 +86,33 @@ def main() -> int:
         print(f"ERROR: source not found: {source}", file=sys.stderr)
         print("Put your PDFs in RAW_DATA/ or pass --source.", file=sys.stderr)
         return 1
+
+    if args.parse_only:
+        pdfs = pipeline.discover(source)
+        if not pdfs:
+            print("No PDFs found.", file=sys.stderr)
+            return 1
+        for pdf in pdfs:
+            doc = pipeline.parser.parse(pdf)
+            text_blocks = [b for b in doc.blocks if b.block_type == "text"]
+            tables = [b for b in doc.blocks if b.block_type == "table"]
+            sections = {b.section for b in doc.blocks if b.section}
+            chars = sum(len(b.text) for b in text_blocks)
+            print(f"\n{'=' * 70}\n{pdf.name[:68]}\n{'=' * 70}")
+            print(f"title       : {doc.title[:66]}")
+            print(f"pages       : {doc.n_pages}")
+            print(f"blocks      : {len(text_blocks)} text, {len(tables)} table")
+            print(f"sections    : {len(sections)}")
+            print(f"boilerplate : {doc.metadata['boilerplate_dropped']} repeated line(s) dropped")
+            print(f"text        : {chars:,} chars")
+            substantial = [b for b in text_blocks if len(b.text) > 300]
+            if substantial:
+                sample = substantial[len(substantial) // 2]
+                wrapped = sample.text.count("\n")
+                print(f"\n--- sample block (page {sample.page}, section={sample.section!r}) ---")
+                print(sample.text[:500])
+                print(f"\n  newlines inside block: {wrapped} (should be 0 for a prose block)")
+        return 0
 
     if args.dry_run:
         pdfs = pipeline.discover(source)

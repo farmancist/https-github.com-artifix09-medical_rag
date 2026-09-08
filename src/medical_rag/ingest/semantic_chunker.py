@@ -30,19 +30,28 @@ from ..models import Chunk, PageBlock, ParsedDocument
 
 logger = logging.getLogger(__name__)
 
-# Abbreviations that must not end a sentence.
-_ABBREVIATIONS = (
-    r"Dr|Mr|Mrs|Ms|Prof|Fig|No|vs|approx|etc|e\.g|i\.e|cf|al|Inc|Ltd|Co|"
-    r"mg|mcg|kg|mL|dL|IU|hr|min|sec|max|q\.d|b\.i\.d|t\.i\.d|q\.i\.d|p\.o|i\.v|i\.m|s\.c"
+# Abbreviations that are almost never sentence-final, so a following capital
+# letter does NOT mean a new sentence ("Dr. Smith", "e.g. Ibuprofen", "et al.").
+#
+# Units (mg, kg, mL) and dosing abbreviations (b.i.d., p.o.) are deliberately
+# absent: they frequently DO end a sentence ("...metformin 500 mg. The patient
+# improved."), and the candidate rule below already requires a following capital,
+# which rules out the mid-sentence "500 mg. of drug X" case.
+_ABBREVIATIONS = frozenset(
+    """
+    dr mr mrs ms prof sr jr st fig figs no nos vs v approx est etc e.g i.e cf al
+    inc ltd co corp dept univ ed eds vol chap pp ca viz ibid
+    """.split()
 )
-_SENTENCE_SPLIT_RE = re.compile(
-    r"(?<!\b(?:" + _ABBREVIATIONS + r"))"      # not right after an abbreviation
-    r"(?<![A-Z])"                                # not after a single initial
-    r"(?<=[.!?])"                                # after terminal punctuation
-    r"(?<!\d\.)"                                 # not after a decimal point
-    r"[\"')\]]*\s+"                             # optional closers, then space
-    r"(?=[A-Z(\[\"'])",                         # next sentence starts capitalised
-)
+
+# A split candidate: terminal punctuation, optional closing quotes/brackets,
+# whitespace, then something that starts a sentence.
+#   group 1 = the punctuation, group 2 = the closers
+# Python's `re` only supports fixed-width lookbehind, so the abbreviation guard
+# cannot live in the pattern -- candidates are filtered in `_ends_sentence`.
+_SPLIT_CANDIDATE_RE = re.compile(r"([.!?])([\"')\]]*)\s+(?=[A-Z(\[\"'])")
+# The token immediately before a candidate's punctuation.
+_PRECEDING_TOKEN_RE = re.compile(r"([A-Za-z][A-Za-z.]*)$")
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]")
 
 
@@ -52,16 +61,35 @@ def count_tokens(text: str) -> int:
     return len(_TOKEN_RE.findall(text))
 
 
+def _ends_sentence(text: str, dot_index: int) -> bool:
+    """Does the '.' at `dot_index` actually terminate a sentence?"""
+    match = _PRECEDING_TOKEN_RE.search(text[:dot_index])
+    if not match:
+        return True
+    token = match.group(1)
+    # A lone capital is an initial: "J. Smith", "A. Patel".
+    if len(token) == 1 and token.isupper():
+        return False
+    return token.lower().rstrip(".") not in _ABBREVIATIONS
+
+
 def split_sentences(text: str) -> list[str]:
     parts: list[str] = []
     for paragraph in text.split("\n\n"):
         paragraph = paragraph.strip()
         if not paragraph:
             continue
-        for sent in _SENTENCE_SPLIT_RE.split(paragraph):
-            sent = sent.strip()
-            if sent:
-                parts.append(sent)
+        start = 0
+        for match in _SPLIT_CANDIDATE_RE.finditer(paragraph):
+            if match.group(1) == "." and not _ends_sentence(paragraph, match.start(1)):
+                continue
+            sentence = paragraph[start : match.end(2)].strip()
+            if sentence:
+                parts.append(sentence)
+            start = match.end()
+        tail = paragraph[start:].strip()
+        if tail:
+            parts.append(tail)
     return parts
 
 

@@ -38,7 +38,17 @@ class DenseEncoder:
     @property
     def model(self):
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError as exc:
+                raise ImportError(
+                    "sentence-transformers is not installed, so no text can be embedded.\n"
+                    "Run `python setup_env.py` to set the machine up, or install manually:\n"
+                    "  pip install torch --index-url https://download.pytorch.org/whl/cu124\n"
+                    "  pip install sentence-transformers\n"
+                    "To inspect PDF parsing without any model, use:\n"
+                    "  python scripts/ingest.py --parse-only"
+                ) from exc
 
             logger.info("Loading embedding model %s on %s", self.model_name, self.device)
             self._model = SentenceTransformer(self.model_name, device=self.device)

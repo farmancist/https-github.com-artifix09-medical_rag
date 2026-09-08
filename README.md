@@ -1,5 +1,7 @@
 # Medical RAG
 
+[![CI](https://github.com/artifix09/medical_rag/actions/workflows/ci.yml/badge.svg)](https://github.com/artifix09/medical_rag/actions/workflows/ci.yml)
+
 Retrieval-augmented question answering over medical reference texts (BNF 85,
 Oxford Handbook of Clinical Medicine, and other PDFs in `RAW_DATA/`).
 
@@ -49,26 +51,30 @@ source .venv/bin/activate     # Linux / macOS
 
 ### Configuration
 
-Edit `.env`. Only two values are mandatory:
+Edit `.env`. Only **one** value is mandatory:
 
 | Variable | What it is |
 |---|---|
-| `GROQ_API_KEY` (alias: `GROK`) | Groq API key, `gsk_...` |
-| `QDRANT_URL` | `http://localhost:6333` for Docker, or your Qdrant Cloud cluster URL |
-| `QDRANT_API_KEY` (alias: `QDRANT`) | only needed for Qdrant Cloud |
+| `GROQ_API_KEY` (alias: `GROK`) | Groq API key, `gsk_...` — required |
+| `QDRANT_URL` | leave **empty** for embedded mode, or set a cluster URL |
+| `QDRANT_API_KEY` (alias: `QDRANT`) | only when `QDRANT_URL` is a remote cluster |
 
 Everything else has a working default that matches the architecture.
 
-### Qdrant
+### Qdrant — no server to run
 
-Local, via Docker:
+Two modes, selected by whether `QDRANT_URL` is set. There is no container and
+no daemon in either case.
 
-```bash
-docker compose up -d           # http://localhost:6333/dashboard
-```
+| `QDRANT_URL` | Mode | Use when |
+|---|---|---|
+| empty | embedded on-disk store at `QDRANT_PATH` (`data/qdrant`) | single machine, zero setup |
+| set | remote Qdrant / Qdrant Cloud | sharing one index between machines |
 
-Or point `QDRANT_URL` at a Qdrant Cloud cluster and set `QDRANT_API_KEY`.
-Nothing else in the code changes.
+The embedded store is a local directory, so it is git-ignored and each machine
+builds its own. Point `QDRANT_URL` at a cluster when you want the laptop to
+query an index the GPU box built — that is the only way the two machines share
+retrieval state.
 
 ### Verify
 
@@ -76,10 +82,9 @@ Nothing else in the code changes.
 python scripts/check_setup.py --models
 ```
 
-Checks dependencies, device, keys, `RAW_DATA/`, Docker, Qdrant connectivity, a
-live Groq call, and (with `--models`) downloads and loads the embedding and
-reranker weights. Every check runs independently, so one failure does not hide
-the rest.
+Checks dependencies, device, keys, `RAW_DATA/`, Qdrant connectivity, a live Groq
+call, and (with `--models`) downloads and loads the embedding and reranker
+weights. Every check runs independently, so one failure does not hide the rest.
 
 ---
 
@@ -104,7 +109,14 @@ Ingestion runs in two independently resumable stages, tracked in
 A crash or Ctrl-C costs one document, not the whole run. The BNF alone is ~1800
 pages, so this matters.
 
-To sanity-check parsing and chunking without touching Qdrant:
+To inspect PDF extraction with **no model and no Qdrant** — this runs on any
+machine, including a laptop with no torch installed:
+
+```bash
+python scripts/ingest.py --parse-only --source "RAW_DATA/B09474-eng.pdf"
+```
+
+To also chunk (needs the embedding model, since chunking is embedding-based):
 
 ```bash
 python scripts/ingest.py --dry-run --source "RAW_DATA/B09474-eng.pdf"
@@ -138,14 +150,38 @@ Interactive docs at `http://localhost:8000/docs`.
 
 ---
 
+## Evaluation
+
+After ingesting, use the golden question set to tune the knobs that cannot be
+chosen from first principles — the confidence threshold, `top_k`, and whether
+query expansion is earning its latency.
+
+```bash
+python scripts/evaluate.py --retrieval-only    # fast, no Groq calls
+python scripts/evaluate.py                     # full pipeline + guardrail suite
+python scripts/evaluate.py --no-expansion      # A/B the expansion stage
+python scripts/evaluate.py --json runs/eval.json
+```
+
+It reports `hit@k`, MRR, mean confidence and refusal rate over
+[eval/golden_questions.json](eval/golden_questions.json), then runs the
+guardrail cases (emergencies must refuse; out-of-corpus questions must fail the
+confidence gate). It exits non-zero if any guardrail case fails, so it can gate
+a deploy.
+
+Add your own questions to that file — it's a starting point, not a benchmark.
+The most useful loop is `--retrieval-only` while tuning retrieval, since it
+makes no LLM calls.
+
 ## Tests
 
 ```bash
 pytest
 ```
 
-All tests run offline: no models, no network, no API keys. The chunker is tested
-against a stub encoder, retrieval against a stub Qdrant.
+97 tests, all offline: no models, no network, no API keys. The chunker is tested
+against a stub encoder and retrieval against a stub Qdrant, so CI runs without
+downloading torch. `requirements-test.txt` is the minimal set needed.
 
 ---
 
@@ -162,9 +198,14 @@ git pull
 python scripts/ingest.py --recreate
 ```
 
-`.env`, `RAW_DATA/`, `data/processed/` and `.venv/` are all git-ignored, so each
-machine keeps its own keys, PDFs, derived artefacts and environment. The Qdrant
-collection is the shared state — index once, query from anywhere.
+`.env`, `RAW_DATA/`, `data/` and `.venv/` are all git-ignored, so each machine
+keeps its own keys, PDFs, derived artefacts and environment. Only code moves
+through git.
+
+In embedded mode each machine builds its own index, so the laptop would have to
+repeat the ingestion. If you want to ingest once on the GPU box and query from
+the laptop, set `QDRANT_URL` to a shared cluster on both — that is the only
+piece of state the two machines can share.
 
 ---
 

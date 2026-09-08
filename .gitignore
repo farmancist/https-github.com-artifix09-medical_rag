@@ -30,6 +30,9 @@ data/processed/**
 data/cache/**
 !data/cache/.gitkeep
 
+# --- embedded Qdrant store (rebuilt by ingestion) ---
+data/qdrant/
+
 # --- model weights (downloaded per machine) ---
 models/
 .hf_cache/

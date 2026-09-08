@@ -6,7 +6,6 @@ numpy>=1.26,<3
 
 # ---- ingestion ----
 PyMuPDF>=1.24
-regex>=2024.5
 
 # ---- embeddings / reranking ----
 # NOTE: torch is intentionally NOT pinned here.
@@ -17,10 +16,8 @@ transformers>=4.41,<5
 sentence-transformers>=3.0,<6
 
 # ---- vector store ----
-qdrant-client>=1.9,<2
-
-# ---- sparse / lexical ----
-rank-bm25>=0.2.2
+# 1.12 for the Query API (query_points) and sparse Modifier.IDF.
+qdrant-client>=1.12,<2
 
 # ---- generation ----
 groq>=0.11
@@ -30,9 +27,7 @@ fastapi>=0.111
 uvicorn[standard]>=0.30
 
 # ---- cli / ux ----
-typer>=0.12
 rich>=13.7
 
 # ---- dev ----
 pytest>=8.2
-pytest-asyncio>=0.23

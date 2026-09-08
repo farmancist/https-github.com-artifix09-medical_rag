@@ -36,15 +36,21 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # ---------- qdrant ----------
-    # Defaults to the local Docker container; point QDRANT_URL at your cloud
-    # cluster to use that instead.
-    qdrant_url: str = "http://localhost:6333"
+    # Two modes, no server to run either way:
+    #   QDRANT_URL set    -> Qdrant Cloud (or any reachable Qdrant), the real target
+    #   QDRANT_URL empty  -> embedded on-disk store at QDRANT_PATH, zero setup
+    qdrant_url: str = ""
+    qdrant_path: Path = Field(default=DATA_DIR / "qdrant")
     # `QDRANT` is accepted as an alias so an existing .env keeps working.
     qdrant_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("QDRANT_API_KEY", "QDRANT"),
     )
     qdrant_collection: str = "medical_rag"
+
+    @property
+    def qdrant_is_embedded(self) -> bool:
+        return not self.qdrant_url.strip()
     qdrant_hnsw_m: int = 32
     qdrant_hnsw_ef_construct: int = 200
     qdrant_hnsw_ef_search: int = 200

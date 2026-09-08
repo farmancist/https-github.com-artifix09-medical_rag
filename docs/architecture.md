@@ -34,8 +34,60 @@ and a lot of tables. Three things the parser does beyond extracting text:
   as an atomic block. A dose table split across chunks is worse than useless —
   it separates a drug from its dose.
 
+- **Line unwrapping.** PDF typesetting breaks lines mid-sentence. Those newlines
+  must be collapsed to spaces while genuine paragraph breaks survive, otherwise
+  every chunk and every quoted citation is riddled with newlines mid-clause, and
+  the sentence splitter mis-segments.
+- **Ligatures expanded.** `ﬂ` → `fl`, so BM25 sees `inflammation`, not
+  `in{ligature}ammation`.
+
 Every block carries its page number, because citations are mandatory downstream:
 an answer that cannot name a page cannot pass the output guardrail.
+
+### Verified against the real corpus
+
+Run on the actual BNF 85, Oxford Handbook and WHO EML, three things needed
+fixing that were not visible from the code alone:
+
+| Found | Fix |
+|---|---|
+| Every block carried mid-sentence newlines from PDF line wrapping | collapse single newlines, keep paragraph breaks |
+| Running footers survived de-duplication because each carries a different page number | fold digits to `#` before counting repeats |
+| The BNF's embedded metadata title is empty, so the citation label became "March - September 2023" | fall back to the cleaned filename, never a page-1 block |
+| De-hyphenation turned `risk-\nbenefit` into `riskbenefit` | resolve each line-break hyphen against the document's own vocabulary |
+
+### The hyphen problem
+
+A hyphen at a line break is ambiguous. `inflamma-\ntion` is a syllable break and
+must be joined; `side-\neffects` is a real compound and must keep its hyphen.
+Counting them across the corpus shows no rule can be fixed:
+
+| Document | Line-break hyphens | Real compounds | Syllable breaks |
+|---|---|---|---|
+| Oxford Handbook (120 pp) | 583 | 11% | **89%** |
+| BNF 85 (120 pp) | 132 | **80%** | 20% |
+| WHO EML (74 pp) | 10 | 60% | 40% |
+
+Always-join corrupts the BNF (`sideeffects`, `crossreference`); always-keep
+corrupts the Oxford Handbook (`prod-uct`, `stu-dents`). Either way BM25 stops
+matching the term a user would type.
+
+The document itself holds the answer: whichever form it uses *elsewhere, away
+from a line break*, is the form intended here. `build_vocabulary()` counts every
+word not adjacent to a line-break hyphen -- so the ambiguous cases cannot vote on
+their own resolution -- and `Vocabulary.resolve()` applies, in order:
+
+1. the hyphenated form appears elsewhere in the document -> keep the hyphen
+2. the joined form appears elsewhere -> join
+3. both halves are frequent standalone words -> keep the hyphen
+4. otherwise -> join
+
+On the cases sampled above this resolves every one correctly except
+`re-emergence`. It costs one extra cheap text pass per document; table detection,
+which happens once, dominates parse time either way.
+
+Parsing throughput is roughly 0.3 s/page, so the BNF's 1906 pages take about ten
+minutes before any GPU work begins.
 
 ## 2. Semantic chunker — 85 / 20%
 
@@ -80,6 +132,13 @@ Two named vectors per point:
 
 - `dense` — PubMedBERT, cosine, HNSW `m=32` / `ef_construct=200`
 - `bm25` — sparse, with `Modifier.IDF` so Qdrant applies the IDF factor server-side
+
+**No server to run.** `QDRANT_URL` selects the mode: empty gives an embedded
+on-disk store under `QDRANT_PATH`, set gives a remote cluster. Embedded mode
+does exact brute-force search — more accurate than HNSW, just slower, and it
+ignores `ef` — so it is right for development and for a single machine. A remote
+cluster is what lets the laptop query an index the GPU box built; that is the
+only way the two machines share retrieval state.
 
 Higher `m` and `ef` than the book RAG buy recall at the cost of index size and
 build time. That is the right trade here: a missed passage in a book RAG is an
@@ -216,10 +275,10 @@ provided sources do not cover this" rather than fill a gap from memory.
 | | Laptop (CPU) | Desktop (CUDA) |
 |---|---|---|
 | Code, tests | ✅ | ✅ |
-| Dry-run parse/chunk | ✅ | ✅ |
-| Full ingestion | slow | ✅ |
+| `--parse-only` PDF inspection | ✅ (no torch needed) | ✅ |
+| Chunking / full ingestion | very slow | ✅ |
 | Serving / querying | ✅ | ✅ |
 
 The same code runs on both; only `.env` differs, and `DEVICE=auto` resolves
-itself. The Qdrant collection is the shared state: index once on the desktop,
-query from either machine.
+itself. With an embedded store each machine holds its own index; point both at
+one `QDRANT_URL` to ingest on the desktop and query from either.

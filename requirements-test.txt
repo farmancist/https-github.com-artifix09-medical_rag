@@ -1,0 +1,11 @@
+# Minimal set to run the test suite.
+#
+# Deliberately excludes torch, transformers and sentence-transformers: every
+# test stubs the encoder and the vector store, so CI stays fast and does not
+# download 2.5 GB of wheels to check text-processing logic.
+pydantic>=2.7,<3
+pydantic-settings>=2.2,<3
+numpy>=1.26,<3
+PyMuPDF>=1.24
+qdrant-client>=1.12,<2
+pytest>=8.2

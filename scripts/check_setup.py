@@ -92,10 +92,16 @@ def check_env() -> None:
     settings = get_settings()
     report(OK, ".env", "found")
 
-    if settings.qdrant_api_key or "localhost" in settings.qdrant_url:
-        report(OK, "QDRANT_API_KEY", "set" if settings.qdrant_api_key else "local, not required")
+    if settings.qdrant_is_embedded:
+        report(
+            OK,
+            "QDRANT_URL",
+            f"empty -> embedded on-disk mode at {settings.qdrant_path}",
+        )
+    elif settings.qdrant_api_key:
+        report(OK, "QDRANT_URL", f"remote: {settings.qdrant_url}")
     else:
-        report(FAIL, "QDRANT_API_KEY", "empty and QDRANT_URL is remote")
+        report(FAIL, "QDRANT_API_KEY", "empty but QDRANT_URL points at a remote cluster")
 
     if settings.groq_api_key:
         report(OK, "GROQ_API_KEY", f"set (model {settings.groq_model})")
@@ -108,10 +114,15 @@ def check_qdrant() -> None:
     from medical_rag.vectorstore.qdrant_store import QdrantStore
 
     settings = get_settings()
+    where = (
+        f"embedded ({settings.qdrant_path})"
+        if settings.qdrant_is_embedded
+        else settings.qdrant_url
+    )
     try:
         store = QdrantStore(settings)
         collections = [c.name for c in store.client.get_collections().collections]
-        report(OK, "qdrant", f"connected to {settings.qdrant_url}")
+        report(OK, "qdrant", f"connected: {where}")
         if settings.qdrant_collection in collections:
             info = store.info()
             level = OK if info["points"] else WARN
@@ -205,29 +216,6 @@ def check_corpus() -> None:
         report(WARN, "manifest", "no ingestion run yet — python scripts/ingest.py --recreate")
 
 
-def check_docker() -> None:
-    import shutil
-    import subprocess
-
-    if not shutil.which("docker"):
-        report(WARN, "docker", "not on PATH — use Qdrant Cloud, or install Docker")
-        return
-    try:
-        out = subprocess.run(
-            ["docker", "ps", "--filter", "name=medical-rag-qdrant", "--format", "{{.Status}}"],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        status = out.stdout.strip()
-        if status:
-            report(OK, "docker", f"medical-rag-qdrant is {status}")
-        else:
-            report(WARN, "docker", "installed, but Qdrant is not running (docker compose up -d)")
-    except Exception as exc:
-        report(WARN, "docker", f"{type(exc).__name__}: {exc}")
-
-
 def check_lexicon() -> None:
     from medical_rag.retrieval.query_expansion import load_lexicon
 
@@ -258,7 +246,6 @@ def main() -> int:
     check_env()
     check_lexicon()
     check_corpus()
-    check_docker()
     check_qdrant()
     check_groq()
     if args.models:

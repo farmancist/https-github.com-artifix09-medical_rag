@@ -32,14 +32,15 @@ def make_doc(sentences: list[str], *, pages: list[int] | None = None) -> ParsedD
         doc_id="doc",
         source_path="/tmp/doc.pdf",
         title="Test Document",
-        n_pages=max(pages),
+        n_pages=max(pages, default=1),
         blocks=[PageBlock(text=s, page=p) for s, p in zip(sentences, pages)],
     )
 
 
 def chunker(**kwargs) -> SemanticChunker:
-    settings = Settings(chunk_min_tokens=1, chunk_max_tokens=512, **kwargs)
-    return SemanticChunker(settings, _TopicEncoder())
+    kwargs.setdefault("chunk_min_tokens", 1)
+    kwargs.setdefault("chunk_max_tokens", 512)
+    return SemanticChunker(Settings(**kwargs), _TopicEncoder())
 
 
 class TestSentenceSplitting:
@@ -58,6 +59,26 @@ class TestSentenceSplitting:
     def test_eg_ie_not_split(self) -> None:
         sentences = split_sentences("Use an NSAID, e.g. ibuprofen. Avoid in renal failure.")
         assert len(sentences) == 2
+
+    def test_abbreviation_before_capital_not_split(self) -> None:
+        sentences = split_sentences("Reviewed by Dr. Ahmed. The dose was reduced.")
+        assert len(sentences) == 2
+        assert sentences[0].startswith("Reviewed by Dr. Ahmed")
+
+    def test_initials_not_split(self) -> None:
+        assert len(split_sentences("Reported by J. Smith. Findings were normal.")) == 2
+
+    def test_unit_before_capital_does_split(self) -> None:
+        """'500 mg. The patient' is a real boundary; units are not abbreviations."""
+        sentences = split_sentences("Give metformin 500 mg. The patient improved.")
+        assert len(sentences) == 2
+        assert sentences[1] == "The patient improved."
+
+    def test_unit_before_lowercase_does_not_split(self) -> None:
+        assert len(split_sentences("Give 500 mg. of the suspension orally.")) == 1
+
+    def test_question_and_exclamation_split(self) -> None:
+        assert len(split_sentences("Is it safe? Yes it is. Good!")) == 3
 
     def test_token_count(self) -> None:
         assert count_tokens("500 mg twice daily") == 4

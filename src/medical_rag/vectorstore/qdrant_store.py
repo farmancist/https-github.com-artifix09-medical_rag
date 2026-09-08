@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import numpy as np
@@ -47,12 +48,23 @@ class QdrantStore:
     @property
     def client(self) -> QdrantClient:
         if self._client is None:
-            self._client = QdrantClient(
-                url=self.settings.qdrant_url,
-                api_key=self.settings.qdrant_api_key or None,
-                timeout=120,
-                prefer_grpc=False,
-            )
+            if self.settings.qdrant_is_embedded:
+                # Embedded on-disk mode: no server, no container, no network.
+                # Good for development and smoke tests; a remote cluster is the
+                # right home for the full corpus and for sharing one index
+                # between machines.
+                path = Path(self.settings.qdrant_path)
+                path.mkdir(parents=True, exist_ok=True)
+                logger.info("Qdrant: embedded on-disk store at %s", path)
+                self._client = QdrantClient(path=str(path))
+            else:
+                logger.info("Qdrant: remote at %s", self.settings.qdrant_url)
+                self._client = QdrantClient(
+                    url=self.settings.qdrant_url,
+                    api_key=self.settings.qdrant_api_key or None,
+                    timeout=120,
+                    prefer_grpc=False,
+                )
         return self._client
 
     # -- schema ---------------------------------------------------------
@@ -102,6 +114,10 @@ class QdrantStore:
 
     def _create_payload_indexes(self) -> None:
         """Indexes for the filters the API exposes (source/section/doc)."""
+        if self.settings.qdrant_is_embedded:
+            # Embedded mode scans exhaustively, so payload indexes are a no-op
+            # there and only emit warnings.
+            return
         fields = {
             "doc_id": models.PayloadSchemaType.KEYWORD,
             "title": models.PayloadSchemaType.KEYWORD,
@@ -221,6 +237,13 @@ class QdrantStore:
         limit: int,
         query_filter: models.Filter | None = None,
     ) -> list[tuple[Chunk, float]]:
+        # Embedded mode is exact brute-force search, so HNSW ef is meaningless
+        # there and passing it only produces a warning.
+        search_params = (
+            None
+            if self.settings.qdrant_is_embedded
+            else models.SearchParams(hnsw_ef=self.settings.qdrant_hnsw_ef_search)
+        )
         result = self.client.query_points(
             collection_name=self.collection,
             query=vector.tolist() if isinstance(vector, np.ndarray) else list(vector),
@@ -228,7 +251,7 @@ class QdrantStore:
             limit=limit,
             with_payload=True,
             query_filter=query_filter,
-            search_params=models.SearchParams(hnsw_ef=self.settings.qdrant_hnsw_ef_search),
+            search_params=search_params,
         )
         return [(self._to_chunk(p.payload or {}), float(p.score)) for p in result.points]
 

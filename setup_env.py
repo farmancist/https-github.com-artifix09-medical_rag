@@ -169,9 +169,10 @@ def ensure_env_file() -> list[str]:
     # `GROK` / `QDRANT` are accepted aliases, matching the existing .env.
     if not (values.get("GROQ_API_KEY") or values.get("GROK") or values.get("GROQ")):
         missing.append("GROQ_API_KEY (or GROK)")
-    url = values.get("QDRANT_URL", "")
-    if not url or "YOUR-CLUSTER" in url:
-        missing.append("QDRANT_URL")
+    # QDRANT_URL is optional: empty means embedded on-disk mode, which needs
+    # no server and no key. Only a placeholder value is a real problem.
+    if "YOUR-CLUSTER" in values.get("QDRANT_URL", ""):
+        missing.append("QDRANT_URL (still the placeholder; clear it for embedded mode)")
     return missing
 
 
@@ -263,13 +264,13 @@ def main() -> int:
 
     say("\n  Next:")
     say(f"    1. {activate}")
-    if not shutil.which("docker"):
-        say("    2. (Qdrant) point QDRANT_URL at your cloud cluster in .env")
-    else:
-        say("    2. docker compose up -d          # local Qdrant on :6333")
-    say("    3. python scripts/check_setup.py --models")
-    say("    4. python scripts/ingest.py --recreate")
+    say("    2. python scripts/check_setup.py --models")
+    say("    3. python scripts/ingest.py --recreate")
+    say("    4. python scripts/evaluate.py --retrieval-only")
     say("    5. python scripts/query.py")
+    say("")
+    say("  Qdrant needs no server: leave QDRANT_URL empty for the embedded")
+    say("  on-disk store, or set it to a cluster URL to use that instead.", DIM)
     say("")
     return 0
 

@@ -1,4 +1,4 @@
-"""BM25 encoded as Qdrant sparse vectors.
+r"""BM25 encoded as Qdrant sparse vectors.
 
 Design note — why not `rank_bm25` in-process:
     A local BM25 index would be a pickle that has to be rebuilt on the GPU box
@@ -33,11 +33,14 @@ B = 0.75
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9\-']*", re.IGNORECASE)
 
 # Deliberately small: aggressive stopword lists hurt medical queries
-# ("vitamin A", "type 1", "no reflow" all carry meaning).
+# ("type 1", "no reflow", "in vitro" all carry meaning).
+#
+# Note "a" and "i" are absent on purpose -- see the single-character rule in
+# `tokenize`. Their commonness is handled by IDF, not by a stoplist.
 _STOPWORDS = frozenset(
     """
-    a an the and or but if then than that this these those of in on at to for from by with
-    as is are was were be been being do does did doing have has had having i you he she it we
+    an the and or but if then than that this these those of in on at to for from by with
+    as is are was were be been being do does did doing have has had having you he she it we
     they them his her its their our your me my what which who whom when where why how
     can could should would may might will shall about into over under again further once
     here there all any both each few more most other some such only own same so too very
@@ -64,10 +67,21 @@ def normalize_token(token: str) -> str:
 
 
 def tokenize(text: str) -> list[str]:
+    """Tokenise for BM25.
+
+    Single characters are KEPT. In general text they are noise, but in medical
+    text they are frequently the whole point: "vitamin D", "vitamin A",
+    "hepatitis B", "T cell", "type 2". Dropping them silently turns
+    "vitamin D deficiency" into "vitamin deficiency" on both the document and
+    the query side, which is a different clinical concept.
+
+    Their commonness is not a problem: Qdrant applies IDF server-side, so a
+    letter that appears in nearly every chunk earns almost no weight anyway.
+    """
     out: list[str] = []
     for raw in _TOKEN_RE.findall(text):
         low = raw.lower()
-        if low in _STOPWORDS or len(low) < 2:
+        if low in _STOPWORDS:
             continue
         out.append(normalize_token(low))
         # "co-trimoxazole" is also indexed as "co" + "trimoxazole" so a query

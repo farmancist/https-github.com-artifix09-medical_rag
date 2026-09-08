@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is what the dev laptop runs; 3.12 catches deprecations early.
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+
+      - name: Run tests
+        env:
+          # The suite must never reach a real service; these are placeholders
+          # that prove nothing depends on a developer's .env.
+          GROQ_API_KEY: ci-not-a-real-key
+          QDRANT_URL: http://localhost:6333
+        run: pytest -q
+
+      - name: Check every module imports
+        env:
+          GROQ_API_KEY: ci-not-a-real-key
+        run: |
+          python -c "
+          import pkgutil, importlib, sys
+          sys.path.insert(0, 'src')
+          import medical_rag
+          skipped = []
+          for m in pkgutil.walk_packages(medical_rag.__path__, 'medical_rag.'):
+              try:
+                  importlib.import_module(m.name)
+              except ImportError as exc:
+                  # torch / groq / fastapi are intentionally not installed here.
+                  skipped.append((m.name, str(exc)))
+          print('imported ok; skipped (missing optional dep):', skipped)
+          "
