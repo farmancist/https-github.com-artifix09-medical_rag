@@ -24,7 +24,12 @@ from typing import Iterator, Sequence
 from qdrant_client import models as qmodels
 
 from .config import Settings, get_settings
-from .generation.guardrails import ConfidenceScorer, InputGuardrail, OutputGuardrail
+from .generation.guardrails import (
+    ConfidenceScorer,
+    InputGuardrail,
+    OutputGuardrail,
+    normalize_citation_markers,
+)
 from .generation.llm import GroqLLM, LLMError, get_llm
 from .generation.prompts import DISCLAIMER, REFUSAL_INSUFFICIENT, build_messages
 from .models import ConfidenceReport, GuardrailVerdict, RAGAnswer, RetrievedChunk
@@ -164,7 +169,7 @@ class MedicalRAGPipeline:
         # ---- 6. generation ----
         with self._timed(timings, "generation"):
             try:
-                raw_answer = self.llm.chat(build_messages(query, top))
+                raw_answer = normalize_citation_markers(self.llm.chat(build_messages(query, top)))
             except LLMError as exc:
                 return self._blocked(
                     query,
@@ -184,6 +189,30 @@ class MedicalRAGPipeline:
         # ---- 7. output gate ----
         with self._timed(timings, "output_guard"):
             output_verdicts, citations = self.output_guard.check(raw_answer, top)
+
+        # The model intermittently returns a well-grounded answer with no [n]
+        # markers at all (measured at roughly 1 run in 6). Refusing a correct
+        # answer over formatting is the wrong trade, so give it exactly one
+        # corrective attempt before falling through to the refusal.
+        if any(v.code == "no_citations" for v in output_verdicts):
+            with self._timed(timings, "citation_retry"):
+                retried = self._retry_for_citations(query, top, raw_answer)
+            if retried is not None:
+                retry_verdicts, retry_citations = self.output_guard.check(retried, top)
+                if not any(v.severity == "block" for v in retry_verdicts):
+                    raw_answer, output_verdicts, citations = (
+                        retried,
+                        retry_verdicts,
+                        retry_citations,
+                    )
+                    output_verdicts = output_verdicts + [
+                        GuardrailVerdict(
+                            passed=True,
+                            code="citation_retry",
+                            severity="info",
+                            reason="First draft omitted source markers; regenerated once.",
+                        )
+                    ]
 
         all_verdicts = input_verdicts + output_verdicts
         output_block = next((v for v in output_verdicts if v.severity == "block"), None)
@@ -234,6 +263,28 @@ class MedicalRAGPipeline:
         if rerank and candidates:
             return self.reranker.rerank(query, candidates, top_k=top_k)
         return candidates[: (top_k or self.settings.final_top_k)]
+
+    def _retry_for_citations(
+        self, query: str, top: Sequence[RetrievedChunk], first_draft: str
+    ) -> str | None:
+        """Ask once more, showing the model its own uncited draft."""
+        messages = build_messages(query, top) + [
+            {"role": "assistant", "content": first_draft},
+            {
+                "role": "user",
+                "content": (
+                    "Your answer contained no source markers. Rewrite it so that every "
+                    "factual sentence ends with the [n] marker of the source that supports "
+                    "it, using plain square brackets. Use only the sources provided. Do not "
+                    "add any fact that is not in them."
+                ),
+            },
+        ]
+        try:
+            return normalize_citation_markers(self.llm.chat(messages))
+        except LLMError as exc:
+            logger.warning("Citation retry failed: %s", exc)
+            return None
 
     # -- helpers --------------------------------------------------------
 

@@ -144,12 +144,102 @@ class SemanticChunker:
         units: list[_Unit] = []
         for block in blocks:
             if block.block_type == "table":
-                # A table is atomic — splitting it mid-row destroys its meaning.
-                units.append(_Unit(block.text, block.page, block.section, True))
+                units.extend(self._table_units(block))
                 continue
             for sent in split_sentences(block.text):
                 units.append(_Unit(sent, block.page, block.section, False))
         return units
+
+    def _table_units(self, block: PageBlock) -> list[_Unit]:
+        """Split an oversized table by rows, repeating the header on each part.
+
+        Tables are otherwise atomic, because splitting mid-row destroys the
+        drug-to-dose correspondence. But a whole table can be far larger than
+        the model's context: measured on the WHO Essential Medicines List, 45%
+        of chunks exceeded the 512-subword limit and the worst lost 94% of its
+        text to silent truncation. A truncated dose table is worse than a split
+        one -- the rows that fall off the end simply cease to exist for
+        retrieval. Repeating the header keeps every part self-describing.
+        """
+        text = block.text
+        if count_tokens(text) <= self.max_tokens:
+            return [_Unit(text, block.page, block.section, True)]
+
+        lines = text.splitlines()
+        if len(lines) < 3:  # not a markdown table we can split on rows
+            return [
+                _Unit(part, block.page, block.section, True)
+                for part in self._split_by_words(text)
+            ]
+
+        header, separator, *rows = lines
+        head_cost = count_tokens(header) + count_tokens(separator)
+        units: list[_Unit] = []
+        current: list[str] = []
+        cost = 0
+
+        def flush() -> None:
+            if current:
+                body = "\n".join([header, separator, *current])
+                units.append(_Unit(body, block.page, block.section, True))
+
+        for row in rows:
+            row_cost = count_tokens(row)
+            if current and head_cost + cost + row_cost > self.max_tokens:
+                flush()
+                current, cost = [], 0
+            if head_cost + row_cost > self.max_tokens:
+                # A single row that cannot fit even alone: split its text.
+                flush()
+                current, cost = [], 0
+                for part in self._split_by_words(row):
+                    units.append(
+                        _Unit(
+                            "\n".join([header, separator, part]),
+                            block.page,
+                            block.section,
+                            True,
+                        )
+                    )
+                continue
+            current.append(row)
+            cost += row_cost
+        flush()
+        return units or [_Unit(text, block.page, block.section, True)]
+
+    def _fit_units(self, group: list[_Unit]) -> list[_Unit]:
+        """Guarantee no single unit exceeds the budget.
+
+        Tables are already handled at parse time; this catches the remaining
+        case of one enormous "sentence" (an un-punctuated list, a wall of
+        references) that would otherwise become an oversized chunk on its own.
+        """
+        out: list[_Unit] = []
+        for unit in group:
+            if count_tokens(unit.text) <= self.max_tokens:
+                out.append(unit)
+                continue
+            out.extend(
+                _Unit(part, unit.page, unit.section, unit.is_table)
+                for part in self._split_by_words(unit.text)
+            )
+        return out
+
+    def _split_by_words(self, text: str) -> list[str]:
+        """Last-resort hard split so no unit can exceed the budget."""
+        words = text.split()
+        if not words:
+            return [text]
+        parts: list[str] = []
+        current: list[str] = []
+        for word in words:
+            current.append(word)
+            if count_tokens(" ".join(current)) >= self.max_tokens:
+                parts.append(" ".join(current))
+                current = []
+        if current:
+            parts.append(" ".join(current))
+        return parts
 
     def _semantic_groups(self, units: list[_Unit]) -> list[list[_Unit]]:
         """Cut wherever consecutive-sentence distance exceeds the percentile."""
@@ -190,7 +280,7 @@ class SemanticChunker:
                 sized.append(group)
                 continue
             current: list[_Unit] = []
-            for unit in group:
+            for unit in self._fit_units(group):
                 unit_tokens = count_tokens(unit.text)
                 if current and self._tokens(current) + unit_tokens > self.max_tokens:
                     sized.append(current)
@@ -223,19 +313,28 @@ class SemanticChunker:
                 out.append(group)
                 continue
 
-            budget = int(self._tokens(group) * self.overlap_ratio)
+            # Overlap must never push a chunk past the budget. Previously a
+            # single oversized sentence was prepended whole (the "and tail"
+            # escape hatch), which is how chunks reached 897 tokens against a
+            # 384 limit -- and anything past ~512 subwords is silently dropped
+            # by the encoder, so the overlap was actively destroying content.
+            group_tokens = self._tokens(group)
+            room = self.max_tokens - group_tokens
+            if room <= 0:
+                out.append(group)
+                continue
+            budget = min(int(group_tokens * self.overlap_ratio), room)
+
             tail: list[_Unit] = []
             used = 0
             for unit in reversed(prev):
                 if unit.is_table:
                     break
                 cost = count_tokens(unit.text)
-                if used + cost > budget and tail:
-                    break
+                if used + cost > budget:
+                    break  # no overlap is better than an oversized chunk
                 tail.insert(0, unit)
                 used += cost
-                if used >= budget:
-                    break
             out.append(tail + group)
         return out
 

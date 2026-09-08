@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from medical_rag.config import Settings
-from medical_rag.generation.guardrails import ConfidenceScorer, InputGuardrail, OutputGuardrail
+from medical_rag.generation.guardrails import (
+    ConfidenceScorer,
+    InputGuardrail,
+    OutputGuardrail,
+    normalize_citation_markers,
+)
 from medical_rag.generation.prompts import DISCLAIMER
 from medical_rag.models import Chunk, RetrievedChunk
 
@@ -126,6 +131,36 @@ class TestConfidenceScorer:
 
 
 # --------------------------------------------------------------------- output
+
+
+class TestCitationMarkerNormalisation:
+    """gpt-oss emits fullwidth brackets. Un-normalised, every answer parses as
+    uncited and the citation guardrail refuses it."""
+
+    def test_cjk_brackets_folded(self) -> None:
+        assert normalize_citation_markers("dose is 500 mg【1】") == "dose is 500 mg[1]"
+
+    def test_fullwidth_brackets_folded(self) -> None:
+        assert normalize_citation_markers("see［2］") == "see[2]"
+
+    def test_ascii_is_untouched(self) -> None:
+        assert normalize_citation_markers("already [1] fine") == "already [1] fine"
+
+    def test_normalised_answer_passes_the_citation_check(self) -> None:
+        sources = [make_chunk("The usual adult dose is 500 mg three times a day.")]
+        raw = "The usual adult dose is 500 mg three times a day【1】."
+        verdicts, citations = OutputGuardrail(Settings()).check(
+            normalize_citation_markers(raw), sources
+        )
+        assert all(v.severity != "block" for v in verdicts)
+        assert len(citations) == 1
+
+    def test_unnormalised_answer_would_be_refused(self) -> None:
+        """Documents why the normalisation step exists."""
+        sources = [make_chunk("The usual adult dose is 500 mg three times a day.")]
+        raw = "The usual adult dose is 500 mg three times a day【1】."
+        verdicts, _ = OutputGuardrail(Settings()).check(raw, sources)
+        assert any(v.code == "no_citations" for v in verdicts)
 
 
 class TestOutputGuardrail:

@@ -120,6 +120,19 @@ class TestSemanticChunking:
         # Allow a small overshoot: a chunk never splits mid-sentence.
         assert all(c.n_tokens <= 40 + 12 for c in chunks)
 
+    def test_overlap_never_pushes_a_chunk_over_budget(self) -> None:
+        """Overlap once inflated real chunks to 897 tokens against a 384 limit,
+        past the encoder's window, so the added context was silently dropped."""
+        sentences = [
+            f"Cardiac observation number {i} was recorded in the trial cohort during review."
+            for i in range(40)
+        ]
+        chunks = chunker(chunk_max_tokens=60, chunk_overlap_ratio=0.5).chunk_document(
+            make_doc(sentences)
+        )
+        assert chunks
+        assert all(c.n_tokens <= 60 + 20 for c in chunks), [c.n_tokens for c in chunks]
+
     def test_overlap_repeats_previous_content(self) -> None:
         doc = make_doc(
             [
@@ -132,6 +145,40 @@ class TestSemanticChunking:
         with_overlap = chunker(chunk_overlap_ratio=0.5).chunk_document(doc)
         without = chunker(chunk_overlap_ratio=0.0).chunk_document(doc)
         assert sum(len(c.text) for c in with_overlap) > sum(len(c.text) for c in without)
+
+    def test_oversized_table_is_split_by_rows_with_header_repeated(self) -> None:
+        """Measured on the real corpus, un-split tables produced chunks where
+        94% of the text fell outside the model's context window."""
+        rows = "\n".join(
+            f"| drug{i} | {i * 100} mg injection in vial for treatment |" for i in range(60)
+        )
+        table = f"| Medicine | Dose |\n|---|---|\n{rows}"
+        doc = ParsedDocument(
+            doc_id="doc",
+            source_path="/tmp/d.pdf",
+            title="T",
+            n_pages=1,
+            blocks=[PageBlock(text=table, page=1, block_type="table")],
+        )
+        chunks = chunker(chunk_max_tokens=100, chunk_overlap_ratio=0.0).chunk_document(doc)
+        assert len(chunks) > 1, "oversized table was not split"
+        for c in chunks:
+            assert c.n_tokens <= 100 + 30, f"chunk still oversized: {c.n_tokens}"
+            # Each part must stay self-describing.
+            assert "| Medicine | Dose |" in c.text
+        # No row may be lost.
+        joined = " ".join(c.text for c in chunks)
+        for i in range(60):
+            assert f"drug{i} " in joined or f"drug{i} |" in joined
+
+    def test_no_chunk_exceeds_the_budget(self) -> None:
+        """A single un-splittable blob must not become an oversized chunk."""
+        blob = " ".join(f"word{i}" for i in range(2000))  # no sentence punctuation
+        chunks = chunker(chunk_max_tokens=120, chunk_overlap_ratio=0.0).chunk_document(
+            make_doc([blob])
+        )
+        assert chunks
+        assert all(c.n_tokens <= 120 + 30 for c in chunks), [c.n_tokens for c in chunks]
 
     def test_tables_are_kept_atomic(self) -> None:
         doc = ParsedDocument(

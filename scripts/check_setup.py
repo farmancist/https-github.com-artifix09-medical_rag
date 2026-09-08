@@ -148,10 +148,15 @@ def check_groq() -> None:
     try:
         reply = GroqLLM(settings).chat(
             [{"role": "user", "content": "Reply with the single word: ready"}],
-            max_tokens=8,
+            # Not 8: reasoning models spend tokens before emitting content, so a
+            # tiny budget returns an empty string and looks like a failure.
+            max_tokens=512,
             retries=0,
         )
-        report(OK, "groq call", f"{settings.groq_model} -> {reply[:40]!r}")
+        if not reply.strip():
+            report(WARN, "groq call", f"{settings.groq_model} reachable but returned empty content")
+        else:
+            report(OK, "groq call", f"{settings.groq_model} -> {reply[:40]!r}")
     except Exception as exc:
         report(FAIL, "groq call", f"{type(exc).__name__}: {exc}")
 

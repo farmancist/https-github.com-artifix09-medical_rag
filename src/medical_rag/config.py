@@ -25,7 +25,10 @@ CACHE_DIR = DATA_DIR / "cache"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",
-        env_file_encoding="utf-8",
+        # utf-8-sig, not utf-8: an editor (or PowerShell's `Set-Content
+        # -Encoding utf8`) can save .env with a BOM, which would otherwise make
+        # the first variable parse as "﻿GROK" and silently go missing.
+        env_file_encoding="utf-8-sig",
         extra="ignore",
         case_sensitive=False,
         populate_by_name=True,  # aliased fields stay constructible by field name
@@ -61,10 +64,15 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("GROQ_API_KEY", "GROK", "GROQ"),
     )
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Groq retired the Llama 3.x line; these are current as of the catalogue
+    # returned by `client.models.list()`. Check that if a 404 shows up here.
+    groq_model: str = "openai/gpt-oss-120b"
     groq_temperature: float = 0.1
-    groq_max_tokens: int = 1024
-    groq_expansion_model: str = "llama-3.1-8b-instant"
+    # Reasoning models (gpt-oss) spend part of this budget on hidden reasoning
+    # tokens before emitting any content, so a budget sized for the answer alone
+    # truncates it mid-sentence.
+    groq_max_tokens: int = 2048
+    groq_expansion_model: str = "openai/gpt-oss-20b"
 
     # ---------- embeddings ----------
     embedding_model: str = "NeuML/pubmedbert-base-embeddings"
@@ -76,7 +84,11 @@ class Settings(BaseSettings):
     chunk_breakpoint_percentile: float = 85.0
     chunk_overlap_ratio: float = 0.20
     chunk_min_tokens: int = 64
-    chunk_max_tokens: int = 512
+    # Word-ish tokens, NOT the model's WordPiece subwords. Measured on this
+    # corpus the subword/word ratio is 1.10 average and 1.21 worst-case, so 512
+    # here would produce ~620 subwords and silently lose the tail of every long
+    # chunk. 384 * 1.21 ~= 465, comfortably inside embedding_max_seq_length.
+    chunk_max_tokens: int = 384
 
     # ---------- retrieval ----------
     dense_top_k: int = 50
@@ -107,6 +119,17 @@ class Settings(BaseSettings):
     raw_dir: Path = Field(default=RAW_DIR)
     processed_dir: Path = Field(default=PROCESSED_DIR)
     cache_dir: Path = Field(default=CACHE_DIR)
+
+    @field_validator("raw_dir", "processed_dir", "cache_dir", "qdrant_path", mode="after")
+    @classmethod
+    def _anchor_to_project(cls, v: Path) -> Path:
+        """Resolve relative paths against the repo, not the shell's cwd.
+
+        `.env` naturally holds relative values like `QDRANT_PATH=data/qdrant`.
+        Without this, running a script from a different directory would quietly
+        create a second, empty index instead of finding the real one.
+        """
+        return v if v.is_absolute() else (PROJECT_ROOT / v)
 
     @field_validator("chunk_overlap_ratio")
     @classmethod

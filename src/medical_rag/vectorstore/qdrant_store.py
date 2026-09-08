@@ -13,6 +13,7 @@ query expansion produces several query variants and we need to fuse across
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -44,10 +45,19 @@ class QdrantStore:
         self.settings = settings or get_settings()
         self.collection = self.settings.qdrant_collection
         self._client = client
+        # Hybrid retrieval fans out across threads. Without this lock they race
+        # to construct the client; in embedded mode that is fatal, because the
+        # on-disk store takes an exclusive file lock and the losers crash with
+        # "already accessed by another instance of Qdrant client".
+        self._client_lock = threading.Lock()
 
     @property
     def client(self) -> QdrantClient:
-        if self._client is None:
+        if self._client is not None:
+            return self._client
+        with self._client_lock:
+            if self._client is not None:  # built while we waited for the lock
+                return self._client
             if self.settings.qdrant_is_embedded:
                 # Embedded on-disk mode: no server, no container, no network.
                 # Good for development and smoke tests; a remote cluster is the
@@ -65,7 +75,7 @@ class QdrantStore:
                     timeout=120,
                     prefer_grpc=False,
                 )
-        return self._client
+            return self._client
 
     # -- schema ---------------------------------------------------------
 

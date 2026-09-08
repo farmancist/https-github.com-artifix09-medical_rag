@@ -12,16 +12,19 @@ from typing import Sequence
 
 from ..models import RetrievedChunk
 
+# Deliberately ASCII. These strings are printed to terminals, and a Windows
+# console on a legacy code page raises UnicodeEncodeError on emoji -- which
+# silently truncated the disclaimer and made the CLI exit non-zero.
 DISCLAIMER = (
-    "⚕️ This information is drawn from the indexed medical literature for general "
-    "educational purposes only. It is not a diagnosis, prescription, or medical advice, "
-    "and it may not reflect your individual circumstances. Consult a qualified healthcare "
-    "professional before acting on anything here. In an emergency, contact your local "
-    "emergency services immediately."
+    "**Medical disclaimer** - This information is drawn from the indexed medical "
+    "literature for general educational purposes only. It is not a diagnosis, "
+    "prescription, or medical advice, and it may not reflect your individual "
+    "circumstances. Consult a qualified healthcare professional before acting on "
+    "anything here. In an emergency, contact your local emergency services immediately."
 )
 
 EMERGENCY_NOTICE = (
-    "🚨 **This may be a medical emergency.** Stop reading and contact your local emergency "
+    "**THIS MAY BE A MEDICAL EMERGENCY.** Stop reading and contact your local emergency "
     "services now (for example 911 in the US, 112 in the EU, 999 in the UK, 1122 in Pakistan), "
     "or go to the nearest emergency department. Do not wait for information from this system."
 )

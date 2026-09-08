@@ -155,7 +155,9 @@ class QueryExpander:
                 },
             ],
             temperature=0.0,
-            max_tokens=256,
+            # Generous because reasoning models spend part of the budget before
+            # emitting the JSON array; too small and the array is cut mid-string.
+            max_tokens=768,
             model=self.settings.groq_expansion_model,
             default=[],
         )

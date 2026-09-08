@@ -223,6 +223,26 @@ class ConfidenceScorer:
 # --------------------------------------------------------------------------
 
 _CITATION_RE = re.compile(r"\[(\d{1,2})\]")
+# Models routinely emit fullwidth/CJK brackets instead of ASCII ones -- gpt-oss
+# writes "【1】". Left unnormalised those markers match nothing, every answer
+# looks uncited, and the citation guardrail refuses perfectly good output.
+_BRACKET_TRANSLATION = str.maketrans(
+    {
+        "【": "[",
+        "】": "]",
+        "〔": "[",
+        "〕": "]",
+        "［": "[",
+        "］": "]",
+        "❲": "[",
+        "❳": "]",
+    }
+)
+
+
+def normalize_citation_markers(text: str) -> str:
+    """Fold bracket variants to ASCII so citations parse and render uniformly."""
+    return text.translate(_BRACKET_TRANSLATION)
 # A number that carries clinical weight: a dose, a threshold, an interval.
 _CLINICAL_NUMBER_RE = re.compile(
     r"\b\d+(?:\.\d+)?\s?(?:mg|mcg|µg|g|kg|ml|mL|l|L|IU|units?|mmol|mEq|mmHg|%|"

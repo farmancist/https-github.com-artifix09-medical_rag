@@ -60,7 +60,11 @@ class DenseEncoder:
         """Real dimension from the loaded model; falls back to config if not loaded."""
         if self._model is None:
             return self.settings.embedding_dim
-        return int(self._model.get_sentence_embedding_dimension())
+        # Renamed in sentence-transformers 5.x; support both.
+        getter = getattr(self._model, "get_embedding_dimension", None) or (
+            self._model.get_sentence_embedding_dimension
+        )
+        return int(getter())
 
     def unload(self) -> None:
         self._model = None

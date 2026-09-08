@@ -118,6 +118,13 @@ class HybridRetriever:
                 results = []
             return _RankedList(query=query, channel=channel, weight=weight, results=results)
 
+        # Threads only pay off against a server, where these calls are
+        # network-bound. The embedded store is local numpy under an exclusive
+        # file lock, so concurrency buys nothing and risks contention.
+        if self.settings.qdrant_is_embedded:
+            _ = self.store.client  # open once, before any fan-out
+            return [run(job) for job in jobs]
+
         with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
             return list(pool.map(run, jobs))
 
