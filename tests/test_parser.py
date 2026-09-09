@@ -167,8 +167,8 @@ class TestDocId:
         assert PDFParser.doc_id_for("a/b/book.pdf") == PDFParser.doc_id_for("a/b/book.pdf")
 
     def test_ignores_directory_so_both_machines_agree(self) -> None:
-        """The laptop and the GPU box store the PDFs at different paths; a
-        path-derived id would duplicate every document in Qdrant."""
+        """Two machines store the PDFs at different paths; a path-derived id
+        would duplicate every document in Qdrant."""
         assert PDFParser.doc_id_for(r"D:\medical rag\RAW_DATA\bnf.pdf") == PDFParser.doc_id_for(
             r"C:\Users\Khan-PC\Downloads\medical_rag\RAW_DATA\bnf.pdf"
         )

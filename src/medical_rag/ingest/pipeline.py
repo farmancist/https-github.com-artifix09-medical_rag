@@ -1,6 +1,8 @@
 """End-to-end ingestion: PDFs -> parsed -> chunked -> embedded -> Qdrant.
 
-This is the GPU-heavy half of the system. The corpus is a handful of very large
+This is the compute-heavy half of the system, and the only part a GPU meaningfully
+speeds up (nothing here is trained; the models run inference only, so CPU works
+and simply takes longer). The corpus is a handful of very large
 references (the BNF alone is ~1800 pages), so the run is split into two
 independently resumable stages, both tracked in a manifest:
 

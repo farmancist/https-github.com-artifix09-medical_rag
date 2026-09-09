@@ -87,7 +87,7 @@ On the cases sampled above this resolves every one correctly except
 which happens once, dominates parse time either way.
 
 Parsing throughput is roughly 0.3 s/page, so the BNF's 1906 pages take about ten
-minutes before any GPU work begins.
+minutes before any embedding work begins.
 
 ## 2. Semantic chunker — 85 / 20%
 
@@ -109,7 +109,25 @@ dose is 500 mg."). Higher overlap keeps a dose attached to the population that
 qualifies it.
 
 Two hard boundaries override the distance test: a section heading change, and a
-table (kept atomic). Chunks are then held to 64–512 tokens.
+table. Chunks are then held to 64–384 word-ish tokens.
+
+**Why 384 and not 512.** `chunk_max_tokens` counts word-ish tokens; the encoder
+counts WordPiece subwords, and medical vocabulary fragments heavily. Measured on
+this corpus the subword/word ratio is 1.10 average and 1.21 worst case, so a 512
+budget produces ~620 subwords and the tail of every long chunk is silently
+dropped by the 512-token model limit.
+
+**Tables are atomic but not unbounded.** A dose table split mid-row separates a
+drug from its dose, so tables are kept whole — but a whole table can be far
+larger than the model's window. Measured on the WHO Essential Medicines List
+before this was fixed: chunks reached 8,274 tokens, **45% exceeded the model
+limit**, and the worst lost **94% of its text** before it was ever embedded.
+Oversized tables are now split by rows with the header repeated on each part, so
+every piece stays self-describing. After the fix, 0% of chunks exceed the limit.
+
+Overlap is capped by the room remaining under the budget. Without that cap a
+single oversized sentence was prepended whole, producing 897-token chunks — so
+the "added context" was itself truncated away.
 
 ## 3. Embeddings — PubMedBERT
 
@@ -121,8 +139,8 @@ attack" are the same thing, or that "-emia" and "-uria" suffixes are
 compositional. Vectors are L2-normalised at encode time, so cosine similarity is
 a dot product and matches the collection's distance metric.
 
-`DEVICE=auto` resolves to `cuda` on the desktop and `cpu` on the laptop; batch
-size is scaled ×4 on GPU. Nothing else in the codebase imports torch.
+`DEVICE=auto` resolves to `cuda` where one is available and `cpu` otherwise;
+batch size is scaled ×4 on GPU. Nothing else in the codebase imports torch.
 
 ## 4. Qdrant — m=32, ef_construct=200
 
@@ -137,8 +155,8 @@ Two named vectors per point:
 on-disk store under `QDRANT_PATH`, set gives a remote cluster. Embedded mode
 does exact brute-force search — more accurate than HNSW, just slower, and it
 ignores `ef` — so it is right for development and for a single machine. A remote
-cluster is what lets the laptop query an index the GPU box built; that is the
-only way the two machines share retrieval state.
+cluster is what lets one machine query an index another machine built; that is
+the only way two machines share retrieval state.
 
 Higher `m` and `ef` than the book RAG buy recall at the cost of index size and
 build time. That is the right trade here: a missed passage in a book RAG is an
@@ -146,8 +164,8 @@ annoyance, a missed contraindication is a hazard. `ef` at search time is
 configurable separately (`QDRANT_HNSW_EF_SEARCH`).
 
 **Why BM25 lives in Qdrant.** A local `rank_bm25` index would be a pickle that
-has to be rebuilt on the GPU box and shipped to the laptop, and the two would
-silently drift. Storing BM25 term weights as sparse vectors means one index and
+has to be rebuilt wherever the ingest runs and shipped everywhere else, and the
+copies would silently drift. Storing BM25 term weights as sparse vectors means one index and
 one source of truth. The formula splits cleanly:
 
 ```
@@ -270,15 +288,28 @@ provided sources do not cover this" rather than fill a gap from memory.
 
 ---
 
-## Machine split
+## Hardware
 
-| | Laptop (CPU) | Desktop (CUDA) |
+**Nothing here is trained.** PubMedBERT and MedCPT are used for inference
+exactly as downloaded — no fine-tuning, no gradients, no epochs. A GPU therefore
+changes how long the *one-time* ingest takes, not whether anything works.
+
+| | CPU only | NVIDIA GPU |
 |---|---|---|
 | Code, tests | ✅ | ✅ |
 | `--parse-only` PDF inspection | ✅ (no torch needed) | ✅ |
-| Chunking / full ingestion | very slow | ✅ |
-| Serving / querying | ✅ | ✅ |
+| Full ingestion (~2,900 pages) | hours, resumable | ~30 min |
+| Serving / querying | ✅ (reranker-bound) | ✅ |
 
-The same code runs on both; only `.env` differs, and `DEVICE=auto` resolves
+Only NVIDIA accelerates PyTorch here. ROCm is Linux-only and has dropped older
+AMD cards; DirectML needs Python ≤3.12, pinned torch, and code changes, for
+little gain on consumer hardware. So AMD and Intel machines run CPU-only, which
+is a supported configuration rather than a broken one.
+
+On CPU, reranking dominates query latency — measured at ~95% of the total, since
+the cross-encoder scores 40 candidates at 512 tokens each. See the Tuning
+section of the README for the two knobs that address it.
+
+The same code runs everywhere; only `.env` differs, and `DEVICE=auto` resolves
 itself. With an embedded store each machine holds its own index; point both at
-one `QDRANT_URL` to ingest on the desktop and query from either.
+one `QDRANT_URL` to ingest once and query from either.

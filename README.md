@@ -106,8 +106,8 @@ no daemon in either case.
 | set | remote Qdrant / Qdrant Cloud | sharing one index between machines |
 
 The embedded store is a local directory, so it is git-ignored and each machine
-builds its own. Point `QDRANT_URL` at a cluster when you want the laptop to
-query an index the GPU box built — that is the only way the two machines share
+builds its own. Point `QDRANT_URL` at a cluster when you want one machine to
+query an index another machine built — that is the only way two machines share
 retrieval state.
 
 ### Verify
@@ -238,25 +238,22 @@ content the precision you give up is not obvious by eye.
 
 ## Two-machine workflow
 
-The laptop is for code; the desktop has the GPU.
+Only code moves through git. `.env`, `RAW_DATA/`, `data/` and `.venv/` are all
+git-ignored, so each machine keeps its own keys, PDFs, index and environment.
 
 ```bash
-# laptop — write code, run tests, commit
+# wherever you write code
 pytest && git add -A && git commit -m "..." && git push
 
-# desktop — pull and run the heavy work
+# wherever you run it
 git pull
 python scripts/ingest.py --recreate
 ```
 
-`.env`, `RAW_DATA/`, `data/` and `.venv/` are all git-ignored, so each machine
-keeps its own keys, PDFs, derived artefacts and environment. Only code moves
-through git.
-
-In embedded mode each machine builds its own index, so the laptop would have to
-repeat the ingestion. If you want to ingest once on the GPU box and query from
-the laptop, set `QDRANT_URL` to a shared cluster on both — that is the only
-piece of state the two machines can share.
+Because the embedded store is a local directory, **each machine builds its own
+index** — the ingest does not transfer. To ingest once and query from several
+machines, set the same `QDRANT_URL` on all of them; a shared cluster is the only
+piece of state they can actually share.
 
 ---
 

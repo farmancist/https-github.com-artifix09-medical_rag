@@ -1,9 +1,9 @@
 """PDF -> ParsedDocument.
 
 Medical PDFs are heavy on multi-column layout, headers/footers and tables.
-We use PyMuPDF because it is pure-wheel (no system deps, which matters since the
-laptop has no Docker or build toolchain) and gives us block-level geometry --
-what we need to (a) drop running headers/footers and (b) read columns in order.
+We use PyMuPDF because it is pure-wheel (no system deps, no build toolchain, so
+a fresh clone installs anywhere) and gives us block-level geometry -- what we
+need to (a) drop running headers/footers and (b) read columns in order.
 
 Page numbers are preserved on every block because citations are mandatory
 downstream: an answer that cannot name a page cannot pass the guardrails.
@@ -340,8 +340,8 @@ class PDFParser:
     def doc_id_for(path: str | Path) -> str:
         """Stable id for a source file, so re-runs address the same document.
 
-        Derived from the file *name*, not its absolute path, so the laptop and
-        the GPU box agree on document ids even with different folder layouts.
+        Derived from the file *name*, not its absolute path, so two machines
+        agree on document ids even with different folder layouts.
         """
         return hashlib.sha1(Path(path).name.encode("utf-8")).hexdigest()[:16]
 

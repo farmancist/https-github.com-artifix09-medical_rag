@@ -1,8 +1,9 @@
 r"""BM25 encoded as Qdrant sparse vectors.
 
 Design note — why not `rank_bm25` in-process:
-    A local BM25 index would be a pickle that has to be rebuilt on the GPU box
-    and then shipped to the laptop, and the two would silently drift apart.
+    A local BM25 index would be a pickle that has to be rebuilt wherever the
+    ingest runs and then shipped to every other machine, and the copies would
+    silently drift apart.
     Instead we store BM25 term weights *in Qdrant* as sparse vectors and let the
     collection's `Modifier.IDF` supply the IDF factor at query time. One index,
     one source of truth, both machines agree.

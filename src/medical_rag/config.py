@@ -1,8 +1,8 @@
 """Single source of truth for configuration.
 
 Every tunable in the architecture diagram lives here and is overridable via
-`.env`, so the *same code* runs on the CPU laptop and the CUDA desktop with
-only the env file differing.
+`.env`, so the *same code* runs on any machine -- CPU or CUDA -- with only the
+env file differing. `DEVICE=auto` resolves the difference at runtime.
 """
 
 from __future__ import annotations

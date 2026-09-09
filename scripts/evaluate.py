@@ -1,6 +1,6 @@
 """Evaluate the pipeline against the golden question set.
 
-Run this on the GPU box AFTER ingestion. It is the tool for tuning the knobs
+Run this AFTER ingestion. It is the tool for tuning the knobs
 that cannot be chosen from first principles -- the confidence threshold, top-k,
 and whether query expansion is earning its latency.
 

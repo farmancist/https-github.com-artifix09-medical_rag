@@ -1,7 +1,7 @@
 """Typed objects that flow through the pipeline.
 
-Keeping these in one place means the ingest side (GPU box) and the serving side
-(laptop / API) agree on the exact payload shape stored in Qdrant.
+Keeping these in one place means the ingest side and the serving side agree on
+the exact payload shape stored in Qdrant, even when they are different machines.
 """
 
 from __future__ import annotations

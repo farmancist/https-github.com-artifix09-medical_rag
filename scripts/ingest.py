@@ -1,6 +1,6 @@
 """Ingest medical PDFs from RAW_DATA/ into Qdrant.
 
-This is the GPU-side job. Typical use on the desktop:
+The long one-time job. Typical use:
 
     python scripts/ingest.py --recreate          # full rebuild
     python scripts/ingest.py                     # resume / add new PDFs
@@ -11,8 +11,8 @@ Both stages are resumable, so a crash or Ctrl-C costs one document, not the run:
     python scripts/ingest.py --stage chunk       # parse + semantic split only
     python scripts/ingest.py --stage index       # embed + upload only
 
-To sanity-check the parser and chunker on the laptop before pushing, use
---dry-run, which touches neither the GPU nor Qdrant beyond chunking:
+To sanity-check the parser and chunker without touching Qdrant, use --dry-run
+(or --parse-only, which additionally needs no model at all):
 
     python scripts/ingest.py --dry-run --source "RAW_DATA/B09474-eng.pdf"
 """
