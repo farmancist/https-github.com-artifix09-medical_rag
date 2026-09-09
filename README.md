@@ -22,7 +22,7 @@ Cross-encoder reranker    MedCPT · mandatory, not optional
     ↓
 Strict guardrails         confidence ≥ 0.8 · mandatory disclaimer
     ↓
-Groq LLM                  llama-3.3-70b-versatile
+Groq LLM                  openai/gpt-oss-120b
 ```
 
 See [docs/architecture.md](docs/architecture.md) for why each stage is tuned the
@@ -30,24 +30,40 @@ way it is.
 
 ---
 
-## Setup
+## Quickstart
 
-Works the same on a CPU laptop and a CUDA desktop — only `.env` differs.
+Four commands from a bare machine. No Docker, no database server, no cloud
+account.
 
 ```bash
 git clone https://github.com/artifix09/medical_rag.git
 cd medical_rag
-python setup_env.py
+python setup_env.py                    # venv + deps + .env; asks for your Groq key
 ```
-
-`setup_env.py` creates `.venv`, detects whether an NVIDIA GPU is present,
-installs the matching torch build, installs everything else, and creates `.env`
-from the template. Then activate it:
 
 ```powershell
-.venv\Scripts\activate        # Windows
-source .venv/bin/activate     # Linux / macOS
+.venv\Scripts\activate                 # Windows
+# source .venv/bin/activate            # Linux / macOS
 ```
+
+**Then copy your PDFs into `RAW_DATA/`.** They are git-ignored (large and
+usually copyrighted), so this is the one step cloning cannot do for you.
+
+```bash
+python scripts/check_setup.py --models   # must print "0 failure(s)"
+python scripts/ingest.py --recreate      # the long one-time job
+python scripts/query.py "what are the contraindications for metformin?"
+```
+
+`setup_env.py` picks the CUDA torch build if it finds an NVIDIA GPU and the CPU
+build otherwise. Both work — see [Hardware](#hardware) for what CPU costs you.
+
+### Requirements
+
+- Python 3.10+ (tested through 3.12; newer usually works)
+- A **Groq API key** from [console.groq.com](https://console.groq.com) — the only
+  mandatory credential. `setup_env.py` will prompt for it.
+- ~2 GB of disk for model weights, plus the index.
 
 ### Configuration
 
@@ -60,6 +76,24 @@ Edit `.env`. Only **one** value is mandatory:
 | `QDRANT_API_KEY` (alias: `QDRANT`) | only when `QDRANT_URL` is a remote cluster |
 
 Everything else has a working default that matches the architecture.
+
+> **Save `.env` as UTF-8 without a BOM.** A BOM prefixes the first variable
+> invisibly, so it silently goes missing. The loader strips one if present, but
+> older checkouts do not — keeping a `# comment` as line 1 makes it harmless.
+
+### Hardware
+
+Nothing in this project is trained. The models are used for inference only, so a
+GPU changes how long the **one-time** ingest takes, not whether it works.
+
+| | Ingest (~2,900 pages) | Per query |
+|---|---|---|
+| NVIDIA GPU | ~30 min | ~2 s |
+| CPU only | a few hours, resumable | ~5–30 s, reranker-dominated |
+
+AMD and Intel GPUs cannot accelerate PyTorch here (ROCm is Linux-only and drops
+older cards; DirectML needs Python ≤3.12 and pinned torch), so those machines run
+CPU-only. If queries feel slow, see [Tuning](#tuning).
 
 ### Qdrant — no server to run
 
@@ -90,7 +124,7 @@ weights. Every check runs independently, so one failure does not hide the rest.
 
 ## Ingestion
 
-Put PDFs in `RAW_DATA/` (git-ignored). Then, **on the GPU machine**:
+Put PDFs in `RAW_DATA/` (git-ignored), then:
 
 ```bash
 python scripts/ingest.py --recreate     # full rebuild
@@ -179,9 +213,26 @@ makes no LLM calls.
 pytest
 ```
 
-97 tests, all offline: no models, no network, no API keys. The chunker is tested
-against a stub encoder and retrieval against a stub Qdrant, so CI runs without
-downloading torch. `requirements-test.txt` is the minimal set needed.
+132 tests, all offline: no models, no network, no API keys. The chunker is tested
+against a stub encoder, and the vector store against a real embedded Qdrant, so
+CI runs without downloading torch. `requirements-test.txt` is the minimal set.
+
+---
+
+## Tuning
+
+Two knobs dominate query latency, and both are one-line `.env` changes. Measured
+on a 4-thread CPU, reranking is ~95% of a query:
+
+| Change | Effect |
+|---|---|
+| `RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` | ~4× faster, loses medical-specific precision |
+| `RERANK_CANDIDATES=20` (from 40) | ~2× faster, slightly lower recall |
+| `CONFIDENCE_THRESHOLD` | lower → fewer refusals, more risk |
+
+Change one, re-run `python scripts/evaluate.py --retrieval-only`, and compare
+`hit_rate` and `mrr`. Decide from the numbers rather than from feel — on medical
+content the precision you give up is not obvious by eye.
 
 ---
 
