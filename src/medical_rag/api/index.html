@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f5f7f5">
+<title>MedRAG — Clinical Reference Assistant</title>
+<style>
+:root{--ink:#182b35;--muted:#718087;--line:#e4eae7;--paper:#fff;--canvas:#f5f7f5;--green:#1e6a5b;--green-dark:#164f45;--mint:#e6f1ed;--gold:#d9a15b;--shadow:0 18px 55px rgba(28,55,49,.08)}
+*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}button,textarea{font:inherit}button{cursor:pointer}.app{min-height:100vh;display:grid;grid-template-columns:260px 1fr}.rail{background:#183a36;color:#e8f1ed;padding:27px 18px;display:flex;flex-direction:column;gap:30px}.brand{display:flex;align-items:center;gap:11px;padding:3px 8px}.brand-mark{width:37px;height:37px;border-radius:12px;background:#d9eee5;color:#1e6a5b;display:grid;place-items:center;font-weight:800;font-size:20px}.brand-name{font-weight:700;letter-spacing:.01em}.brand-sub{font-size:11px;color:#a9c3b8;margin-top:1px}.rail-label{text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:#9ab5a9;padding:0 10px;margin-bottom:9px}.nav-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;color:#e4eee9;font-size:13px}.nav-item.active{background:rgba(255,255,255,.12)}.nav-icon{width:17px;text-align:center;color:#bdd5ca}.collection{border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.055);border-radius:13px;padding:14px}.collection-top{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:600}.dot{width:7px;height:7px;background:#79d1a7;border-radius:50%;display:inline-block;margin-right:6px;box-shadow:0 0 0 3px rgba(121,209,167,.14)}.collection p{font-size:11px;line-height:1.5;color:#a8beb4;margin:9px 0 0}.rail-bottom{margin-top:auto}.rail-note{font-size:11px;line-height:1.55;color:#aec2ba;padding:14px 10px;border-top:1px solid rgba(255,255,255,.12)}.rail-note strong{color:#e7f1ec;font-weight:600}.main{min-width:0;display:flex;flex-direction:column}.topbar{height:72px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 clamp(22px,5vw,72px);background:rgba(255,255,255,.56)}.crumb{font-size:12px;color:var(--muted)}.crumb b{color:var(--ink);font-weight:600}.top-actions{display:flex;align-items:center;gap:18px}.health{font-size:11px;color:var(--muted);display:flex;align-items:center}.health-dot{width:7px;height:7px;background:#d5a758;border-radius:50%;margin-right:7px}.health.online .health-dot{background:#42a67e}.docs{font-size:12px;color:var(--green);text-decoration:none;font-weight:600}.docs:hover{text-decoration:underline}.workspace{width:min(920px,100%);margin:0 auto;padding:46px 28px 32px;flex:1;display:flex;flex-direction:column}.intro{margin-bottom:28px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:var(--green);font-weight:700}.intro h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(31px,4vw,43px);line-height:1.14;letter-spacing:-.035em;font-weight:500;margin:10px 0 9px}.intro p{color:var(--muted);margin:0;font-size:14px}.mode-wrap{display:flex;gap:5px;background:#e9eeeb;padding:4px;border-radius:10px;width:max-content;margin:22px 0}.mode{border:0;background:transparent;color:#728078;padding:7px 13px;border-radius:7px;font-size:12px;font-weight:600}.mode.selected{background:#fff;color:var(--ink);box-shadow:0 1px 3px #203b321c}.prompt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:23px}.prompt{border:1px solid var(--line);background:rgba(255,255,255,.7);border-radius:12px;padding:13px 14px;text-align:left;color:#34474f;min-height:83px;transition:.18s}.prompt:hover{background:white;border-color:#b8d1c7;transform:translateY(-1px);box-shadow:0 7px 20px #1c37310c}.prompt small{display:block;color:#8a989b;font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin-bottom:5px}.prompt span{font-size:12px;line-height:1.45;display:block}.conversation{display:flex;flex-direction:column;gap:18px;margin:6px 0 20px}.message{display:flex;gap:11px;align-items:flex-start;animation:up .25s ease}.avatar{flex:none;width:30px;height:30px;border-radius:10px;background:var(--mint);color:var(--green);display:grid;place-items:center;font-weight:700;font-size:12px}.message.user .avatar{background:#e8e9e6;color:#59645f}.bubble{min-width:0;max-width:760px}.who{font-size:11px;font-weight:700;color:#52636a;margin:3px 0 6px}.body-text{font-size:14px;line-height:1.7;color:#293b43;white-space:pre-wrap}.message.user .body-text{background:#fff;border:1px solid var(--line);padding:11px 14px;border-radius:4px 13px 13px 13px}.message.error .body-text{color:#9f4c3f}.meta-line{display:flex;align-items:center;gap:9px;margin-top:11px;color:var(--muted);font-size:10px}.confidence{border-radius:30px;background:#edf4ef;color:#3e735e;padding:3px 8px}.confidence.low{background:#f8efe5;color:#956c33}.sources{margin-top:14px;border-top:1px solid var(--line);padding-top:11px}.sources-title{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#87938f;font-weight:700;margin-bottom:8px}.source-list{display:flex;flex-direction:column;gap:7px}.source{background:#f8faf8;border:1px solid #e7ece8;border-radius:9px;padding:9px 11px}.source-head{display:flex;justify-content:space-between;gap:10px;font-size:11px;font-weight:650;color:#42554f}.page{color:var(--green);white-space:nowrap;font-weight:600}.source p{font-size:11px;color:#64736f;line-height:1.5;margin:5px 0 0;white-space:pre-wrap}.disclaimer{font-size:10px;color:#77847f;margin-top:14px;padding-top:10px;border-top:1px solid var(--line);max-width:700px}
+.disclaimer .answer-content{font-size:10px;line-height:1.55}
+.disclaimer .answer-content h3{margin:0 0 3px;font-size:10px;color:#77847f}
+.disclaimer .answer-content p{margin:0}.typing{display:inline-flex;gap:4px;padding:8px 0}.typing i{width:5px;height:5px;background:#83a79a;border-radius:50%;animation:pulse 1s infinite}.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}.composer-wrap{position:sticky;bottom:0;margin-top:auto;padding-top:12px;background:linear-gradient(transparent,var(--canvas) 20%)}.composer{background:#fff;border:1px solid #dce5e0;border-radius:15px;padding:12px 12px 10px;box-shadow:var(--shadow);transition:border .2s}.composer:focus-within{border-color:#90b9a9}.composer textarea{width:100%;resize:none;border:0;outline:0;padding:4px 5px;color:var(--ink);min-height:45px;max-height:160px;background:transparent;font-size:14px;line-height:1.5}.composer textarea::placeholder{color:#a0aaa7}.composer-foot{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 0}.hint{font-size:10px;color:#929d99}.send{border:0;border-radius:9px;background:var(--green);color:white;padding:8px 14px;font-size:12px;font-weight:650;display:flex;align-items:center;gap:9px}.send:hover{background:var(--green-dark)}.send:disabled{opacity:.5;cursor:wait}.send-icon{font-size:15px;line-height:12px}.safety{font-size:10px;color:#96a09c;text-align:center;margin:10px 0 0}.empty{min-height:28px}@keyframes pulse{50%{opacity:.3;transform:translateY(-2px)}}@keyframes up{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@media(max-width:760px){.app{grid-template-columns:1fr}.rail{display:none}.topbar{height:58px;padding:0 18px}.workspace{padding:32px 18px 22px}.prompt-grid{grid-template-columns:1fr}.prompt{min-height:0}.prompt:nth-child(n+3){display:none}.intro h1{font-size:34px}.top-actions{gap:12px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+</style>
+<style>
+.assistant .body-text{white-space:normal;line-height:1.75}
+.answer-content p{margin:0 0 12px}
+.answer-content p:last-child{margin-bottom:0}
+.answer-content h3{margin:21px 0 8px;color:#183a36;font-size:15px;line-height:1.4;font-weight:700}
+.answer-content h3:first-child{margin-top:0}
+.answer-content strong{font-weight:700;color:#203a36}
+.answer-content em{font-style:italic}
+.answer-content code{background:#edf2ef;padding:1px 5px;border-radius:4px;font-size:.92em}
+.answer-content ul,.answer-content ol{margin:4px 0 14px;padding-left:23px}
+.answer-content li{padding-left:3px;margin:5px 0}
+.answer-content .citation{color:var(--green);font-size:.82em;font-weight:700;text-decoration:none;vertical-align:super;margin-left:2px}
+.answer-content .citation:hover,.answer-content .citation:focus-visible{text-decoration:underline}
+.conversation-head{display:flex;align-items:center;justify-content:space-between;margin:8px 0 12px;color:#75837e;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.clear-chat{border:1px solid var(--line);border-radius:8px;background:#fff;color:#5d6e68;padding:6px 10px;font-size:11px;font-weight:600}
+.clear-chat:hover{border-color:#b8d1c7;color:var(--green)}
+.clear-chat:disabled{opacity:.5;cursor:not-allowed}
+.mode:focus-visible,.prompt:focus-visible,.send:focus-visible,.clear-chat:focus-visible,.composer textarea:focus-visible,.source-link:focus-visible{outline:3px solid #78ac98;outline-offset:2px}
+.health.degraded .health-dot{background:#d59a45}
+.health.offline .health-dot{background:#bd6255}
+.health.offline,.health.degraded{color:#8e5b3e}
+.sources details>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;color:#64736f;font-size:11px;font-weight:650}
+.sources details>summary::-webkit-details-marker{display:none}
+.sources details>summary:before{content:"+";display:grid;place-items:center;width:16px;height:16px;border:1px solid #dce5e0;border-radius:50%;font-size:12px}
+.sources details[open]>summary:before{content:"−"}
+.source{scroll-margin-top:16px}
+.source-label{font-size:10px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+.source-link{color:inherit;text-decoration:none}
+.source-link:hover{text-decoration:underline}
+.status-message{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.answer-loading .body-text{min-height:28px}
+.message.assistant[aria-busy="true"] .who:after{content:" · preparing response";font-weight:400;color:#87938f}
+@media(max-width:760px){.conversation-head{margin-top:5px}.bubble{max-width:calc(100vw - 64px)}.source-head{align-items:flex-start}.source-head .page{font-size:10px}.answer-content h3{margin-top:17px}.composer-wrap{padding-bottom:env(safe-area-inset-bottom)}}
+@media(prefers-reduced-motion:reduce){.message{animation:none}.typing i{animation:none;opacity:.7}}
+.workspace.has-messages .intro,.workspace.has-messages .prompt-grid{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="rail">
+<div class="brand"><div class="brand-mark">M</div><div><div class="brand-name">MedRAG</div><div class="brand-sub">Clinical reference assistant</div></div></div>
+<div><div class="rail-label">Workspace</div><div class="nav-item active"><span class="nav-icon">✳</span> Ask a question</div><a class="nav-item" href="/docs" style="text-decoration:none"><span class="nav-icon">⌘</span> API playground</a></div>
+<div><div class="rail-label">Knowledge base</div><div class="collection"><div class="collection-top"><span>Reference library</span><span id="collection-dot" class="dot"></span></div><p id="collection-copy">Connecting to the indexed medical sources…</p></div></div>
+<div class="rail-bottom"><div class="rail-note"><strong>Evidence first.</strong><br>Answers are grounded in retrieved passages and include page references where available.</div></div>
+</aside>
+<main class="main">
+<header class="topbar"><div class="crumb">Workspace <span style="padding:0 7px;color:#b1bbb7">/</span> <b>Ask a question</b></div><div class="top-actions"><div class="health" id="health" role="status" aria-live="polite"><span class="health-dot"></span><span id="health-label">Connecting</span></div><a class="docs" href="/docs">API docs ↗</a></div></header>
+<section class="workspace">
+<div class="intro"><div class="eyebrow">Medical knowledge, with sources</div><h1>What would you like<br>to understand?</h1><p>Ask a clinical reference question. Review the supporting passages and page citations.</p></div>
+<div class="mode-wrap" role="group" aria-label="Response mode"><button class="mode selected" data-mode="answer" aria-pressed="true">Answer</button><button class="mode" data-mode="search" aria-pressed="false">Find sources</button></div>
+<div class="prompt-grid" id="prompts">
+<button class="prompt" data-query="What is the adult dose of balsalazide for maintaining remission in ulcerative colitis?"><small>BNF · Dosing</small><span>Adult maintenance dose of balsalazide</span></button>
+<button class="prompt" data-query="What monitoring is recommended for patients taking aminosalicylates?"><small>BNF · Monitoring</small><span>Monitoring for aminosalicylate treatment</span></button>
+<button class="prompt" data-query="What are the common adverse effects of metformin?"><small>Clinical reference</small><span>Common adverse effects of metformin</span></button>
+</div>
+<div class="conversation-head"><span>Conversation</span><button class="clear-chat" id="clear-chat" type="button" disabled>Clear chat</button></div>
+<div class="conversation" id="conversation" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Chat conversation"></div>
+<div class="status-message" id="request-status" role="status" aria-live="polite"></div>
+<div class="composer-wrap"><form class="composer" id="form"><textarea id="query" rows="2" maxlength="2000" aria-describedby="input-hint" aria-label="Your clinical question" placeholder="Ask about a medicine, dose, interaction, or clinical topic…"></textarea><div class="composer-foot"><span class="hint" id="input-hint">Enter to send · Shift + Enter for a new line</span><span class="hint" id="char-count" aria-live="off">0 / 2000</span><button class="send" id="send" type="submit"><span id="send-label">Ask MedRAG</span><span class="send-icon" aria-hidden="true">↑</span></button></div></form><div class="safety">For reference and educational support. Always verify clinical decisions against authoritative guidance.</div></div>
+</section>
+</main>
+</div>
+<script>
+const conversation=document.getElementById('conversation'),workspace=document.querySelector('.workspace'),input=document.getElementById('query'),form=document.getElementById('form'),send=document.getElementById('send'),sendLabel=document.getElementById('send-label'),health=document.getElementById('health'),clearChat=document.getElementById('clear-chat'),requestStatus=document.getElementById('request-status'),charCount=document.getElementById('char-count');let mode='answer',busy=false,messageSequence=0;
+function updateControls(){send.disabled=busy||!input.value.trim();clearChat.disabled=busy||conversation.childElementCount===0;workspace.classList.toggle('has-messages',conversation.childElementCount>0)}
+input.addEventListener('input',()=>{charCount.textContent=input.value.length.toLocaleString()+' / 2,000';input.style.height='auto';input.style.height=Math.min(input.scrollHeight,160)+'px';updateControls()});
+clearChat.addEventListener('click',()=>{if(busy)return;conversation.replaceChildren();updateControls();requestStatus.textContent='Conversation cleared.';input.focus()});
+document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.mode').forEach(x=>{const selected=x===b;x.classList.toggle('selected',selected);x.setAttribute('aria-pressed',String(selected))});mode=b.dataset.mode;sendLabel.textContent=mode==='answer'?'Ask MedRAG':'Find sources'}));
+function addMessage(role,text){const node=document.createElement('article');node.id='message-'+(++messageSequence);node.className='message '+role;node.setAttribute('aria-label',role==='user'?'Your message':'MedRAG response');const avatar=document.createElement('div');avatar.className='avatar';avatar.setAttribute('aria-hidden','true');avatar.textContent=role==='user'?'You':'M';const bubble=document.createElement('div');bubble.className='bubble';const who=document.createElement('div');who.className='who';who.textContent=role==='user'?'You':'MedRAG';const body=document.createElement('div');body.className='body-text';body.textContent=text;bubble.append(who,body);node.append(avatar,bubble);conversation.append(node);node.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});updateControls();return {node,bubble,body}}
+function addSources(bubble,items,{collapsible=false}={}){if(!items?.length)return;const visible=items.slice(0,6),box=document.createElement('section');box.className='sources';box.setAttribute('aria-label','Sources and evidence');const list=document.createElement('div');list.className='source-list';const messageId=bubble.closest('.message').id;visible.forEach((s,index)=>{const sourceId='source-'+messageId+'-'+(index+1);const card=document.createElement('article');card.className='source';card.id=sourceId;card.tabIndex=-1;const labelText=s.title||s.chunk?.title||s.section||s.chunk?.section||'Source';const head=document.createElement('div');head.className='source-head';const label=document.createElement('a');label.className='source-link';label.href='#'+sourceId;label.textContent=labelText;const page=document.createElement('span');page.className='page';const meta=s.metadata||s.chunk?.metadata||{};const ps=s.printed_page_start||meta.printed_page_start||meta.printed_page;const pe=s.printed_page_end||meta.printed_page_end||ps;const a=s.page_start??s.chunk?.page_start,b=s.page_end??s.chunk?.page_end;page.textContent=ps?(ps===pe?'p. '+ps:'pp. '+ps+'–'+pe):(a===b?'p. '+a:'pp. '+a+'–'+b);head.append(label,page);const number=document.createElement('div');number.className='source-label';number.textContent='Source ['+(index+1)+']';card.append(number,head);const excerpt=s.text||s.snippet||s.chunk?.text;if(excerpt){const p=document.createElement('p');p.textContent=excerpt.slice(0,520)+(excerpt.length>520?'…':'');card.append(p)}list.append(card)});if(collapsible){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Sources and evidence ('+visible.length+')';details.append(summary,list);box.append(details)}else{const title=document.createElement('div');title.className='sources-title';title.textContent='Retrieved evidence';box.append(title,list)}bubble.append(box)}
+function addMeta(bubble,data){const line=document.createElement('div');line.className='meta-line';if(data.confidence){const c=document.createElement('span');c.className='confidence'+(data.confidence.passed?'':' low');c.textContent='Evidence confidence '+Math.round((data.confidence.score||0)*100)+'%';line.append(c)}if(data.timings_ms){const total=Object.values(data.timings_ms).reduce((a,b)=>a+(Number(b)||0),0);if(total){const t=document.createElement('span');t.textContent=(total/1000).toFixed(1)+'s';t.setAttribute('aria-label','Response time');line.append(t)}}if(line.childNodes.length)bubble.append(line)}
+async function submit(q){
+ q=q.trim();if(!q||busy)return;
+ busy=true;updateControls();requestStatus.textContent='Preparing your response. This may take a little while.';addMessage('user',q);input.value='';input.style.height='auto';charCount.textContent='0 / 2,000';
+ const out=addMessage('assistant','');
+ out.node.setAttribute('aria-busy','true');out.node.classList.add('answer-loading');
+ out.body.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
+ try{
+  const url=mode==='answer'?'/ask':'/search';
+  const payload=mode==='answer'?{query:q,include_retrieved:true}:{query:q,top_k:6,rerank:true};
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  let data;
+  try{data=await res.json()}catch{throw new Error('The server returned an unreadable response.')}
+  if(!res.ok)throw new Error(res.status>=500?'The service encountered a problem. Please try again.':typeof data.detail==='string'?data.detail:'Request failed ('+res.status+')');
+  if(mode==='search'){
+   out.body.textContent=data.length?('Found '+data.length+' relevant passages.'):'No matching passages found.';
+   addSources(out.bubble,data,{collapsible:true});
+  }else{
+   const sources=data.retrieved?.length?data.retrieved:data.citations||[];
+   const answer=withoutDisclaimer(data.answer||'No answer was returned.',data.disclaimer);
+   renderAnswerMarkdown(out.body,answer,sources.length);
+   addMeta(out.bubble,data);
+   addSources(out.bubble,sources,{collapsible:true});
+   bindCitationLinks(out.body);
+   if(data.disclaimer){
+    const d=document.createElement('div');d.className='disclaimer';renderAnswerMarkdown(d,data.disclaimer,0);out.bubble.append(d);
+   }
+  }
+  requestStatus.textContent=mode==='search'?(data.length?'Found '+data.length+' relevant passages.':'No matching passages found.'):'Response ready.';
+ }catch(e){
+  out.node.classList.add('error');
+  out.body.textContent='I couldn’t complete that request. '+e.message+' Check the connection and try again.';
+  requestStatus.textContent='Request failed. '+e.message;
+ }finally{
+  busy=false;out.node.removeAttribute('aria-busy');out.node.classList.remove('answer-loading');updateControls();input.focus();
+ }
+}
+form.addEventListener('submit',e=>{e.preventDefault();submit(input.value)});
+input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}});
+document.querySelectorAll('.prompt').forEach(b=>b.addEventListener('click',()=>{input.value=b.dataset.query;input.dispatchEvent(new Event('input'));input.focus();form.requestSubmit()}));
+fetch('/health').then(async r=>{if(!r.ok)throw new Error('Health check failed');return r.json()}).then(d=>{const ready=d.status==='ok';health.classList.add(ready?'online':'degraded');const label=ready?'System ready':'System needs attention';document.getElementById('health-label').textContent=label;const q=d.qdrant||{};const points=q.points_count??q.points??null;document.getElementById('collection-copy').textContent=points!=null?Number(points).toLocaleString()+' indexed passages · '+(d.device||'device available'):ready?'Medical reference collection connected.':'Reference collection is unavailable.'}).catch(()=>{health.classList.add('offline');document.getElementById('health-label').textContent='API unavailable';document.getElementById('collection-copy').textContent='Could not connect to the local API.'});
+</script>
+<script>
+function appendInlineMarkdown(parent,text){
+ const token=/(\[\d+\]|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_)/g;
+ let offset=0,match;
+ while((match=token.exec(text))!==null){
+  if(match.index>offset)parent.append(document.createTextNode(text.slice(offset,match.index)));
+  const raw=match[0],citation=/^\[(\d+)\]$/.exec(raw),strong=raw.startsWith('**')||raw.startsWith('__'),code=raw.startsWith('`');
+  if(citation){
+   const link=document.createElement('a');link.className='citation';link.dataset.sourceIndex=citation[1];link.setAttribute('aria-label','Open source '+citation[1]);link.textContent=raw;parent.append(link);offset=token.lastIndex;continue;
+  }
+  const element=document.createElement(strong?'strong':code?'code':'em');
+  const delimiter=strong?2:1;
+  element.textContent=raw.slice(delimiter,-delimiter);
+  parent.append(element);offset=token.lastIndex;
+ }
+ if(offset<text.length)parent.append(document.createTextNode(text.slice(offset)));
+}
+function renderAnswerMarkdown(body,text,sourceCount=0){
+ const lines=text.replace(/\r\n?/g,'\n').split('\n'),fragment=document.createDocumentFragment();
+ let i=0;
+ const isBullet=line=>/^\s*[-*]\s+/.test(line);
+ const isNumbered=line=>/^\s*\d+[.)]\s+/.test(line);
+ const isHeading=line=>/^#{1,3}\s+/.test(line)||/^\*\*.+?\*\*:?\s*$/.test(line);
+ while(i<lines.length){
+  const line=lines[i].trim();
+  if(!line||/^([-*_]\s*){3,}$/.test(line)){i++;continue}
+  if(isHeading(line)){
+   const heading=document.createElement('h3');
+   appendInlineMarkdown(heading,line.replace(/^#{1,3}\s+/,'').replace(/:?\s*$/,'').replace(/^\*\*(.+)\*\*$/,'$1'));
+   fragment.append(heading);i++;continue;
+  }
+  if(isBullet(lines[i])||isNumbered(lines[i])){
+   const ordered=isNumbered(lines[i]),list=document.createElement(ordered?'ol':'ul');
+   while(i<lines.length&&(ordered?isNumbered(lines[i]):isBullet(lines[i]))){
+    const item=document.createElement('li');
+    appendInlineMarkdown(item,lines[i].replace(ordered?/^\s*\d+[.)]\s+/:/^\s*[-*]\s+/,'').trim());
+    list.append(item);i++;
+   }
+   fragment.append(list);continue;
+  }
+  const paragraph=[];
+  while(i<lines.length&&lines[i].trim()&&!isHeading(lines[i].trim())&&!isBullet(lines[i])&&!isNumbered(lines[i])&&!/^([-*_]\s*){3,}$/.test(lines[i].trim())){
+   paragraph.push(lines[i].trim());i++;
+  }
+  if(paragraph.length){
+   const p=document.createElement('p');appendInlineMarkdown(p,paragraph.join(' '));fragment.append(p);
+  }
+ }
+ body.replaceChildren(fragment);body.classList.add('answer-content');
+ const messageId=body.closest('.message')?.id;
+ body.querySelectorAll('.citation').forEach(link=>{const number=Number(link.dataset.sourceIndex);if(number>sourceCount||!messageId){link.replaceWith(document.createTextNode(link.textContent));return}link.dataset.sourceRef='source-'+messageId+'-'+number;link.href='#'+link.dataset.sourceRef});
+}
+function bindCitationLinks(body){body.addEventListener('click',event=>{const link=event.target.closest('.citation');if(!link)return;event.preventDefault();const card=document.getElementById(link.dataset.sourceRef);if(!card)return;const details=card.closest('details');if(details)details.open=true;card.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});card.focus({preventScroll:true})})}
+function withoutDisclaimer(answer,disclaimer){if(!disclaimer)return answer;const clean=text=>text.replace(/\s+/g,' ').replace(/\*\*/g,'').trim();const marker=clean(disclaimer),normalized=clean(answer),index=normalized.lastIndexOf(marker);if(index<0)return answer;const rawIndex=answer.lastIndexOf(disclaimer);if(rawIndex>=0)return answer.slice(0,rawIndex).replace(/(?:\s*---\s*)+$/,'').trimEnd();const label=disclaimer.replace(/\*\*/g,'');const fallback=answer.lastIndexOf(label);return fallback<0?answer:answer.slice(0,fallback).replace(/(?:\s*---\s*)+$/,'').trimEnd()}
+</script>
+</body>
+</html>

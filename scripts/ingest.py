@@ -137,7 +137,14 @@ def main() -> int:
     if args.stage == "chunk":
         print_stats("chunking", pipeline.stage_chunk(source, force=args.force or args.recreate))
     elif args.stage == "index":
-        print_stats("indexing", pipeline.stage_index(recreate=args.recreate, force=args.force))
+        print_stats(
+            "indexing",
+            pipeline.stage_index(
+                recreate=args.recreate,
+                force=args.force,
+                source=args.source,
+            ),
+        )
     else:
         print_stats(
             "ingestion complete",

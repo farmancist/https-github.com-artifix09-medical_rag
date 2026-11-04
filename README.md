@@ -72,6 +72,7 @@ Edit `.env`. Only **one** value is mandatory:
 | Variable | What it is |
 |---|---|
 | `GROQ_API_KEY` (alias: `GROK`) | Groq API key, `gsk_...` — required |
+| `GROQ_MAX_TOKENS` | Maximum generated tokens per response (default: 32,768; model limits still apply) |
 | `QDRANT_URL` | leave **empty** for embedded mode, or set a cluster URL |
 | `QDRANT_API_KEY` (alias: `QDRANT`) | only when `QDRANT_URL` is a remote cluster |
 
@@ -94,6 +95,18 @@ GPU changes how long the **one-time** ingest takes, not whether it works.
 AMD and Intel GPUs cannot accelerate PyTorch here (ROCm is Linux-only and drops
 older cards; DirectML needs Python ≤3.12 and pinned torch), so those machines run
 CPU-only. If queries feel slow, see [Tuning](#tuning).
+
+> **This machine specifically:** `DEVICE` defaults to `cpu` even though a
+> DirectML path exists for the RX590 (`src/medical_rag/device.py`,
+> `requirements-dml.txt`). This machine has been losing power unexpectedly
+> 1–7×/day for at least a month, including days with no GPU load — a general
+> hardware/power-delivery issue, not something DirectML load specifically
+> causes. CPU-only stays the default as a precaution against the RX590's
+> ~225W draw while that fault is undiagnosed. Treat `DEVICE=dml` as a
+> deliberate, supervised one-off (e.g. `scripts/bench_device.py`, or a
+> full-corpus rebuild where the speed is worth it) — resumable ingestion
+> (see `scripts/ingest.py`) makes a mid-run reboot cost one document, not the
+> run.
 
 ### Qdrant — no server to run
 
@@ -143,14 +156,53 @@ Ingestion runs in two independently resumable stages, tracked in
 A crash or Ctrl-C costs one document, not the whole run. The BNF alone is ~1800
 pages, so this matters.
 
-To inspect PDF extraction with **no model and no Qdrant** — this runs on any
-machine, including a laptop with no torch installed:
+To rebuild and re-index one document without disturbing other indexed sources:
+
+```bash
+python scripts/ingest.py --stage chunk --source "RAW_DATA/BNF.pdf" --force
+python scripts/ingest.py --stage index --source "RAW_DATA/BNF.pdf" --force
+```
+
+Forced indexing replaces that document's existing Qdrant points before writing
+the updated chunks. Do not combine source-filtered indexing with `--recreate`,
+which rebuilds the entire collection.
+
+To inspect PDF extraction without the embedding model or Qdrant, run:
 
 ```bash
 python scripts/ingest.py --parse-only --source "RAW_DATA/B09474-eng.pdf"
 ```
 
-To also chunk (needs the embedding model, since chunking is embedding-based):
+`pymupdf-layout` is available as an opt-in parser path. Set
+`PDF_LAYOUT_ANALYSIS=true` in `.env` to activate its ONNX model locally on CPU.
+It is disabled by default: a distributed 100-page BNF comparison found more
+table blocks with layout enabled, but also lower text similarity and several
+garbled table extractions. Validate the report against the source before
+enabling it for ingestion. No embedding model is needed for parse-only.
+
+To compare layout analysis against PyMuPDF's line-based table detection across
+an evenly distributed 100-page sample, save a JSON report, and inspect
+per-page extraction differences:
+
+```bash
+python scripts/compare_pdf_layout.py "RAW_DATA/BNF.pdf"
+python scripts/compare_pdf_layout.py "RAW_DATA/BNF.pdf" --all-pages
+```
+
+The report includes elapsed time, extracted text/table volume, per-page text
+similarity, and table differences. These are comparison signals, not accuracy
+scores; inspect differing pages against the source before changing parser
+defaults. Use `--sample-pages 250` to choose another evenly distributed sample
+size.
+
+### BNF-specific extraction and chunking
+
+A full or sampled parse of the British National Formulary uses the BNF profile. It keeps line geometry and reads each page right-column top-to-bottom, then left-column top-to-bottom, tracks chapter and subsection headings, monograph names, BNF field labels, and both printed and PDF page numbers. Gaps in a sampled page list reset carried context so unrelated pages cannot inherit a drug or field. The pale-blue `#E0E7F5` fill marks a dose panel when it contains `INDICATIONS AND DOSE`, or when an unlabelled panel contains both a route and a population dose. Same-colour safety callouts without dose evidence are excluded. Dose panels remain structured dose content, not tables. Appendix list tables with a blue `TABLE n` title band and an adjoining pale-blue body are captured as titled table blocks, including their independent list columns. Drug-interaction appendix pages carry an `INTERACTIONS` field.
+
+The BNF chunker uses those structural boundaries and a token budget without sentence embeddings. Other documents retain the semantic-embedding chunker. BNF chunks are split at changes in drug/entity, field, dose indication, route, and side-effect frequency. Oversized tables are split by rows; a continuation dose row is not promoted to a repeated header, and page/entity metadata stays on each split chunk. Chunks carry source path, printed page, PDF page range, hierarchy, entity, and field metadata. The `/search` endpoint accepts exact `entity` and `field` filters.
+
+This profile is specific to this BNF layout. Review parse-only output from representative pages before rebuilding chunks, then force chunking and indexing for the BNF so the stored chunks and Qdrant points use the new metadata. Other documents use the generic parser and chunker until a matching document-specific profile is added.
+To preview generic parsing and chunking (non-BNF documents use the embedding model):
 
 ```bash
 python scripts/ingest.py --dry-run --source "RAW_DATA/B09474-eng.pdf"
@@ -195,6 +247,7 @@ python scripts/evaluate.py --retrieval-only    # fast, no Groq calls
 python scripts/evaluate.py                     # full pipeline + guardrail suite
 python scripts/evaluate.py --no-expansion      # A/B the expansion stage
 python scripts/evaluate.py --json runs/eval.json
+python scripts/evaluate.py --source OHCM --retrieval-only --debug-source --show-misses
 ```
 
 It reports `hit@k`, MRR, mean confidence and refusal rate over
@@ -205,7 +258,11 @@ a deploy.
 
 Add your own questions to that file — it's a starting point, not a benchmark.
 The most useful loop is `--retrieval-only` while tuning retrieval, since it
-makes no LLM calls.
+makes no LLM calls. `--source` selects cases tagged only with that source and filters
+retrieval to matching indexed documents in the manifest. `--debug-source`
+shows the matching documents and their indexing status; `--show-misses` prints
+up to three retrieved evidence snippets per missed retrieval case. Results
+also include metrics by test category and a `no_source_chunks` count.
 
 ## Tests
 

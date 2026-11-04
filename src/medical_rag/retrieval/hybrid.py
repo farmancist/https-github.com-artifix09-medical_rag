@@ -16,6 +16,7 @@ is a hypothesis about what the user meant, not the user's actual words.
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Sequence
@@ -98,6 +99,9 @@ class HybridRetriever:
             jobs.append((query, "dense", weight))
             jobs.append((query, "sparse", weight))
 
+        failures: list[Exception] = []
+        failures_lock = threading.Lock()
+
         def run(job: tuple[str, str, float]) -> _RankedList:
             query, channel, weight = job
             try:
@@ -113,8 +117,10 @@ class HybridRetriever:
                         limit=self.settings.sparse_top_k,
                         query_filter=query_filter,
                     )
-            except Exception:
+            except Exception as exc:
                 logger.exception("%s search failed for %r", channel, query)
+                with failures_lock:
+                    failures.append(exc)
                 results = []
             return _RankedList(query=query, channel=channel, weight=weight, results=results)
 
@@ -123,10 +129,18 @@ class HybridRetriever:
         # file lock, so concurrency buys nothing and risks contention.
         if self.settings.qdrant_is_embedded:
             _ = self.store.client  # open once, before any fan-out
-            return [run(job) for job in jobs]
+            ranked_lists = [run(job) for job in jobs]
+        else:
+            with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
+                ranked_lists = list(pool.map(run, jobs))
 
-        with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
-            return list(pool.map(run, jobs))
+        if len(failures) == len(jobs):
+            raise RuntimeError(
+                f"All retrieval searches failed for QDRANT_COLLECTION="
+                f"{self.settings.qdrant_collection!r}; verify the configured Qdrant "
+                "collection and connection."
+            ) from failures[0]
+        return ranked_lists
 
     # -- fusion ---------------------------------------------------------
 

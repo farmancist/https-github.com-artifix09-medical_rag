@@ -6,6 +6,7 @@ All offline — Qdrant and the encoder are stubbed.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from medical_rag.config import Settings
 from medical_rag.embeddings.sparse import BM25Encoder, tokenize, token_id
@@ -133,6 +134,14 @@ class _StubStore:
         return self._chunks(next(iter(self.sparse.values())))[:limit]
 
 
+class _BrokenStore:
+    def search_dense(self, vector, *, limit, query_filter=None):
+        raise ValueError("Collection not found")
+
+    def search_sparse(self, vector, *, limit, query_filter=None):
+        raise ValueError("Collection not found")
+
+
 def make_retriever(dense_ids, sparse_ids) -> HybridRetriever:
     return HybridRetriever(
         Settings(),
@@ -168,6 +177,19 @@ class TestRRF:
     def test_plain_string_query_is_accepted(self) -> None:
         retriever = make_retriever(["a"], ["a"])
         assert retriever.retrieve("plain question") != []
+
+    def test_all_search_failures_are_reported_as_operational_error(self) -> None:
+        retriever = HybridRetriever(
+            Settings(qdrant_url="http://localhost:6333"),
+            store=_BrokenStore(),
+            encoder=_StubEncoder(),
+            bm25=BM25Encoder(avgdl=10.0, n_docs=5),
+        )
+
+        with pytest.raises(RuntimeError, match="QDRANT_COLLECTION") as error:
+            retriever.retrieve("plain question")
+
+        assert isinstance(error.value.__cause__, ValueError)
 
 
 # --------------------------------------------------------- query expansion

@@ -59,7 +59,9 @@ class GroqLLM:
                     temperature=(
                         self.settings.groq_temperature if temperature is None else temperature
                     ),
-                    max_tokens=max_tokens or self.settings.groq_max_tokens,
+                    max_completion_tokens=(
+                        self.settings.groq_max_tokens if max_tokens is None else max_tokens
+                    ),
                 )
                 return (response.choices[0].message.content or "").strip()
             except Exception as exc:  # rate limit / transient network
@@ -82,7 +84,9 @@ class GroqLLM:
             model=model or self.model,
             messages=list(messages),
             temperature=(self.settings.groq_temperature if temperature is None else temperature),
-            max_tokens=max_tokens or self.settings.groq_max_tokens,
+            max_completion_tokens=(
+                self.settings.groq_max_tokens if max_tokens is None else max_tokens
+            ),
             stream=True,
         )
         for event in stream:

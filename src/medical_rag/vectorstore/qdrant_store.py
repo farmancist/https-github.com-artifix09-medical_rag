@@ -133,6 +133,9 @@ class QdrantStore:
             "title": models.PayloadSchemaType.KEYWORD,
             "section": models.PayloadSchemaType.KEYWORD,
             "page_start": models.PayloadSchemaType.INTEGER,
+            "metadata.entity": models.PayloadSchemaType.KEYWORD,
+            "metadata.field": models.PayloadSchemaType.KEYWORD,
+            "metadata.table_title": models.PayloadSchemaType.KEYWORD,
         }
         for field, schema in fields.items():
             try:
@@ -305,6 +308,8 @@ def build_filter(
     *,
     doc_ids: Sequence[str] | None = None,
     sections: Sequence[str] | None = None,
+    entity: str | None = None,
+    field: str | None = None,
 ) -> models.Filter | None:
     conditions: list[models.Condition] = []
     if doc_ids:
@@ -315,4 +320,12 @@ def build_filter(
         conditions.append(
             models.FieldCondition(key="section", match=models.MatchAny(any=list(sections)))
         )
+    if entity:
+        conditions.append(models.FieldCondition(
+            key="metadata.entity", match=models.MatchValue(value=entity)
+        ))
+    if field:
+        conditions.append(models.FieldCondition(
+            key="metadata.field", match=models.MatchValue(value=field)
+        ))
     return models.Filter(must=conditions) if conditions else None

@@ -7,16 +7,17 @@ Docs: http://localhost:8000/docs
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..config import configure_logging, get_settings
 from ..models import RAGAnswer
 from ..pipeline import MedicalRAGPipeline, get_pipeline
-from ..vectorstore.qdrant_store import QdrantStore
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +61,16 @@ class AskRequest(BaseModel):
     query: str = Field(..., min_length=3, max_length=2000, examples=["What causes a heart attack?"])
     doc_ids: list[str] | None = None
     sections: list[str] | None = None
+    entity: str | None = Field(default=None, description="Exact indexed entity, such as a drug name")
+    field: str | None = Field(default=None, description="Exact indexed field, such as RENAL IMPAIRMENT")
     top_k: int | None = Field(default=None, ge=1, le=20)
     include_retrieved: bool = False
 
 
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=3, max_length=2000)
+    entity: str | None = Field(default=None, description="Exact indexed entity, such as a drug name")
+    field: str | None = Field(default=None, description="Exact indexed field, such as RENAL IMPAIRMENT")
     top_k: int | None = Field(default=None, ge=1, le=50)
     rerank: bool = True
 
@@ -81,6 +86,7 @@ class SearchHit(BaseModel):
     sparse_score: float | None
     rrf_score: float | None
     rerank_score: float | None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------
@@ -92,11 +98,14 @@ def _pipeline() -> MedicalRAGPipeline:
     return get_pipeline()
 
 
+@app.get("/", include_in_schema=False)
+def home() -> FileResponse:
+    return FileResponse(Path(__file__).with_name("index.html"))
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     settings = get_settings()
-    store = QdrantStore(settings)
-    info = store.info()
+    info = get_pipeline().retriever.store.info()
     return {
         "status": "ok" if info.get("exists") else "degraded",
         "device": settings.resolve_device(),
@@ -116,6 +125,8 @@ def ask(request: AskRequest) -> RAGAnswer:
             request.query,
             doc_ids=request.doc_ids,
             sections=request.sections,
+            entity=request.entity,
+            field=request.field,
             top_k=request.top_k,
         )
     except Exception as exc:
@@ -132,7 +143,10 @@ def ask(request: AskRequest) -> RAGAnswer:
 def search(request: SearchRequest) -> list[SearchHit]:
     """Retrieval only — no generation, no guardrails. For tuning and evaluation."""
     try:
-        hits = _pipeline().search(request.query, top_k=request.top_k, rerank=request.rerank)
+        hits = _pipeline().search(
+            request.query, top_k=request.top_k, rerank=request.rerank,
+            entity=request.entity, field=request.field,
+        )
     except Exception as exc:
         logger.exception("Search failure")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -149,6 +163,7 @@ def search(request: SearchRequest) -> list[SearchHit]:
             sparse_score=h.sparse_score,
             rrf_score=h.rrf_score,
             rerank_score=h.rerank_score,
+            metadata=h.chunk.metadata,
         )
         for h in hits
     ]

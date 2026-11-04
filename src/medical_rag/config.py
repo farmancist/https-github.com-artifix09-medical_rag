@@ -35,8 +35,24 @@ class Settings(BaseSettings):
     )
 
     # ---------- runtime ----------
-    device: Literal["auto", "cpu", "cuda"] = "auto"
+    # Default is "cpu", not "auto": this machine has been losing power
+    # unexpectedly 1-7 times a day for at least a month, including days with
+    # no GPU load at all -- a general power-delivery/hardware reliability
+    # problem, NOT something DirectML/GPU load specifically triggers (see
+    # src/medical_rag/device.py docstring for the full correction and the
+    # event-log evidence). The RX590 draws ~225W the PSU may not be specced
+    # for, so avoiding it is still a reasonable precaution while the
+    # hardware gets diagnosed -- but a precaution against a suspected
+    # contributing factor, not a fix for a confirmed root cause.
+    # "auto"/"cuda"/"dml" remain available as an explicit, deliberate opt-in
+    # (e.g. `DEVICE=dml` for a one-off benchmark or a supervised rebuild) --
+    # "auto" goes through device.get_device(), which raises rather than
+    # silently landing on CPU; any explicit value here is honoured as-is.
+    device: Literal["auto", "cpu", "cuda", "dml"] = "cpu"
     log_level: str = "INFO"
+    # Layout model can improve detection on some pages but was less reliable
+    # than line-based detection on a BNF sample; keep opt-in pending validation.
+    pdf_layout_analysis: bool = False
 
     # ---------- qdrant ----------
     # Two modes, no server to run either way:
@@ -69,9 +85,9 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     groq_temperature: float = 0.1
     # Reasoning models (gpt-oss) spend part of this budget on hidden reasoning
-    # tokens before emitting any content, so a budget sized for the answer alone
-    # truncates it mid-sentence.
-    groq_max_tokens: int = 2048
+    # tokens before emitting any content. Keep a generous completion budget;
+    # the model's own context/output limits still apply.
+    groq_max_tokens: int = 32768
     groq_expansion_model: str = "openai/gpt-oss-20b"
 
     # ---------- embeddings ----------
@@ -91,11 +107,11 @@ class Settings(BaseSettings):
     chunk_max_tokens: int = 384
 
     # ---------- retrieval ----------
-    dense_top_k: int = 50
-    sparse_top_k: int = 50
+    dense_top_k: int = 80
+    sparse_top_k: int = 80
     rrf_k: int = 60
-    rerank_candidates: int = 40
-    final_top_k: int = 6
+    rerank_candidates: int = 60
+    final_top_k: int = 8
 
     # ---------- reranker ----------
     reranker_model: str = "ncbi/MedCPT-Cross-Encoder"
@@ -146,15 +162,18 @@ class Settings(BaseSettings):
         return v
 
     def resolve_device(self) -> str:
-        """Turn `auto` into a concrete torch device string."""
+        """Turn `auto` into a concrete backend name: "cuda", "dml", or "cpu".
+
+        `auto` is resolved by `device.get_device()`, which raises rather than
+        silently landing on CPU (unless ALLOW_CPU=1) -- see that module for
+        why. An explicit `DEVICE=` value is a deliberate override and is
+        honoured as-is, unchecked.
+        """
         if self.device != "auto":
             return self.device
-        try:
-            import torch
+        from .device import get_device
 
-            return "cuda" if torch.cuda.is_available() else "cpu"
-        except Exception:  # torch missing or broken -> stay on CPU
-            return "cpu"
+        return get_device().backend
 
     def ensure_dirs(self) -> None:
         for d in (self.raw_dir, self.processed_dir, self.cache_dir):

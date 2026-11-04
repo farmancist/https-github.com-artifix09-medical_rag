@@ -21,8 +21,9 @@ class PageBlock(BaseModel):
 
     text: str
     page: int
-    block_type: Literal["text", "table"] = "text"
+    block_type: Literal["text", "table", "dose_box"] = "text"
     section: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ParsedDocument(BaseModel):
@@ -62,13 +63,15 @@ class Chunk(BaseModel):
         digest = hashlib.sha1(f"{doc_id}:{index}:{text}".encode("utf-8")).hexdigest()
         return digest
 
+    def page_label(self) -> str:
+        printed_start = self.metadata.get("printed_page_start") or self.metadata.get("printed_page")
+        printed_end = self.metadata.get("printed_page_end") or printed_start
+        if printed_start:
+            return f"p.{printed_start}" if printed_start == printed_end else f"pp.{printed_start}-{printed_end}"
+        return f"p.{self.page_start}" if self.page_start == self.page_end else f"pp.{self.page_start}-{self.page_end}"
+
     def citation_label(self) -> str:
-        pages = (
-            f"p.{self.page_start}"
-            if self.page_start == self.page_end
-            else f"pp.{self.page_start}-{self.page_end}"
-        )
-        return f"{self.title or self.doc_id}, {pages}"
+        return f"{self.title or self.doc_id}, {self.page_label()}"
 
 
 # --------------------------------------------------------------------------
@@ -140,6 +143,7 @@ class Citation(BaseModel):
     title: str
     page_start: int
     page_end: int
+    printed_page: str | None = None
     source_path: str
     snippet: str = ""
 

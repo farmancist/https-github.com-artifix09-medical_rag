@@ -18,6 +18,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 # The layman->medical lexicon must ship with the package, not just exist on disk.
 "medical_rag.resources" = ["*.json"]
+"medical_rag.api" = ["index.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

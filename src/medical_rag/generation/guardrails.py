@@ -244,12 +244,73 @@ def normalize_citation_markers(text: str) -> str:
     """Fold bracket variants to ASCII so citations parse and render uniformly."""
     return text.translate(_BRACKET_TRANSLATION)
 # A number that carries clinical weight: a dose, a threshold, an interval.
-_CLINICAL_NUMBER_RE = re.compile(
-    r"\b\d+(?:\.\d+)?\s?(?:mg|mcg|µg|g|kg|ml|mL|l|L|IU|units?|mmol|mEq|mmHg|%|"
-    r"hours?|hrs?|days?|weeks?|months?|years?|times?\s?(?:a|per)\s?day)\b",
+_CLINICAL_MEASUREMENT_RE = re.compile(
+    r"(?<![\w.])(?P<start>\d+(?:\.\d+)?)"
+    r"(?:\s*[-–—]\s*(?P<end>\d+(?:\.\d+)?))?\s*"
+    r"(?P<unit>"
+    r"micrograms?|mcg|[µμu]g|milligrams?|mg|grams?|g|kilograms?|kg|"
+    r"millilit(?:re|er)s?|ml|lit(?:re|er)s?|l|"
+    r"international\s+units?|iu|units?|mmol|milliequivalents?|meq|mmhg|%|"
+    r"hours?|hrs?|days?|weeks?|months?|years?|times?\s+(?:a|per)\s+day"
+    r")(?!\w)",
     re.IGNORECASE,
 )
 _NO_ANSWER_MARKER = "the provided sources do not cover this"
+
+_UNIT_ALIASES = {
+    "mcg": "microgram",
+    "µg": "microgram",
+    "μg": "microgram",
+    "ug": "microgram",
+    "microgram": "microgram",
+    "micrograms": "microgram",
+    "mg": "milligram",
+    "milligram": "milligram",
+    "milligrams": "milligram",
+    "g": "gram",
+    "gram": "gram",
+    "grams": "gram",
+    "kg": "kilogram",
+    "kilogram": "kilogram",
+    "kilograms": "kilogram",
+    "ml": "millilitre",
+    "millilitre": "millilitre",
+    "millilitres": "millilitre",
+    "milliliter": "millilitre",
+    "milliliters": "millilitre",
+    "l": "litre",
+    "litre": "litre",
+    "litres": "litre",
+    "liter": "litre",
+    "liters": "litre",
+    "iu": "international unit",
+    "international unit": "international unit",
+    "international units": "international unit",
+    "unit": "unit",
+    "units": "unit",
+    "mmol": "mmol",
+    "meq": "milliequivalent",
+    "milliequivalent": "milliequivalent",
+    "milliequivalents": "milliequivalent",
+    "mmhg": "mmhg",
+    "%": "%",
+    "hour": "hour",
+    "hours": "hour",
+    "hr": "hour",
+    "hrs": "hour",
+    "day": "day",
+    "days": "day",
+    "week": "week",
+    "weeks": "week",
+    "month": "month",
+    "months": "month",
+    "year": "year",
+    "years": "year",
+    "time a day": "times per day",
+    "times a day": "times per day",
+    "time per day": "times per day",
+    "times per day": "times per day",
+}
 
 
 class OutputGuardrail:
@@ -312,19 +373,37 @@ class OutputGuardrail:
 
     @staticmethod
     def _unverified_numbers(answer: str, retrieved: Sequence[RetrievedChunk]) -> set[str]:
-        """Any dose/interval in the answer must appear verbatim in the context.
+        """Require each numeric clinical value and equivalent unit in context.
 
-        Numeric hallucination is the highest-severity failure mode here, and it
-        is one of the few that can be caught deterministically.
+        BNF and model answers commonly spell the same unit differently, e.g.
+        "micrograms" and "µg". Canonicalizing units avoids false refusals while
+        still requiring every value and its unit to be supported.
         """
-        corpus = " ".join(r.chunk.text for r in retrieved).lower()
-        corpus_norm = re.sub(r"\s+", "", corpus)
+        corpus = " ".join(r.chunk.text for r in retrieved)
+        supported = OutputGuardrail._clinical_measurements(corpus)
         unsupported: set[str] = set()
-        for match in _CLINICAL_NUMBER_RE.finditer(answer):
-            token = match.group(0)
-            if re.sub(r"\s+", "", token.lower()) not in corpus_norm:
-                unsupported.add(token)
+        for match in _CLINICAL_MEASUREMENT_RE.finditer(answer):
+            unit = re.sub(r"\s+", " ", match.group("unit").casefold().replace("μ", "µ"))
+            canonical_unit = _UNIT_ALIASES.get(unit, unit)
+            values = [match.group("start")]
+            if match.group("end"):
+                values.append(match.group("end"))
+            for value in values:
+                if (value, canonical_unit) not in supported:
+                    unsupported.add(match.group(0))
+                    break
         return unsupported
+
+    @staticmethod
+    def _clinical_measurements(text: str) -> set[tuple[str, str]]:
+        measurements: set[tuple[str, str]] = set()
+        for match in _CLINICAL_MEASUREMENT_RE.finditer(text):
+            unit = re.sub(r"\s+", " ", match.group("unit").casefold().replace("μ", "µ"))
+            canonical_unit = _UNIT_ALIASES.get(unit, unit)
+            measurements.add((match.group("start"), canonical_unit))
+            if match.group("end"):
+                measurements.add((match.group("end"), canonical_unit))
+        return measurements
 
     @staticmethod
     def _citations(markers: set[int], retrieved: Sequence[RetrievedChunk]) -> list[Citation]:
@@ -339,6 +418,7 @@ class OutputGuardrail:
                     title=chunk.title or chunk.doc_id,
                     page_start=chunk.page_start,
                     page_end=chunk.page_end,
+                    printed_page=chunk.metadata.get("printed_page"),
                     source_path=chunk.source_path,
                     snippet=(snippet[:300] + "…") if len(snippet) > 300 else snippet,
                 )

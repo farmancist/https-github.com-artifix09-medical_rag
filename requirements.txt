@@ -5,7 +5,8 @@ python-dotenv>=1.0
 numpy>=1.26,<3
 
 # ---- ingestion ----
-PyMuPDF>=1.24
+PyMuPDF>=1.28.2,<2
+pymupdf-layout>=1.28.2,<2
 
 # ---- embeddings / reranking ----
 # NOTE: torch is intentionally NOT pinned here.

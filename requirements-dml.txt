@@ -1,0 +1,36 @@
+# DirectML acceleration overlay — Windows machines with a non-NVIDIA GPU
+# (this repo's target: AMD Radeon RX590, gfx803/Polaris — ROCm does not
+# support this card on Windows or Linux, so DirectML is the only real GPU
+# path here; see docs/CONTEXT.md and README "Hardware" for why).
+#
+# Install AFTER the base CPU stack, in this order:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+#   pip install -r requirements-dml.txt
+#
+# Why the order matters: `onnxruntime-directml` and plain `onnxruntime` both
+# install the *same* `onnxruntime` import package and will silently clobber
+# each other depending on install order — pip does not treat them as
+# conflicting because they are different distribution names. `optimum` is
+# installed WITHOUT its `[onnxruntime]` extra specifically so it never pulls
+# the plain (CPU-only) onnxruntime; onnxruntime-directml supplies the
+# `onnxruntime` module instead, with DmlExecutionProvider available.
+#
+# torch itself stays on the CPU build — DirectML acceleration here goes
+# through the ONNX Runtime execution provider (sentence-transformers
+# backend="onnx", model_kwargs={"provider": "DmlExecutionProvider"}), not
+# through torch's own device backend. torch-directml was considered and
+# rejected as the default per the master prompt (thinner support, pins an
+# older torch); it remains available as a manual fallback, never installed
+# by default.
+
+# optimum==1.24.0 (the version originally pinned here) bundles its ONNX
+# Runtime integration in-package and imports transformers internals
+# (CLIPSdpaAttention) that transformers>=4.5x removed -- it fails with
+# `ImportError: cannot import name 'CLIPSdpaAttention'` the moment
+# sentence-transformers tries to load an ONNX backend. optimum>=2.0 splits
+# that integration into the separate `optimum-onnx` package instead; pin both.
+optimum==2.1.0
+optimum-onnx==0.1.0
+onnxruntime-directml==1.20.1
+onnx==1.17.0

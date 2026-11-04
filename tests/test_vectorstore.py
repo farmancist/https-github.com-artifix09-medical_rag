@@ -206,3 +206,14 @@ class TestHybridAgainstRealStore:
         )
         scores = [r.rrf_score for r in retriever.retrieve("metformin renal")]
         assert scores == sorted(scores, reverse=True)
+
+
+
+def test_bnf_entity_and_field_filters_are_exact() -> None:
+    query_filter = build_filter(entity="Naproxen", field="INDICATIONS AND DOSE")
+    assert query_filter is not None
+    conditions = {condition.key: condition.match.value for condition in query_filter.must}
+    assert conditions == {
+        "metadata.entity": "Naproxen",
+        "metadata.field": "INDICATIONS AND DOSE",
+    }

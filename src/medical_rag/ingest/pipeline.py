@@ -31,8 +31,10 @@ from ..embeddings.encoder import DenseEncoder, get_encoder
 from ..embeddings.sparse import BM25Encoder, tokenize
 from ..models import Chunk, ParsedDocument
 from ..vectorstore.qdrant_store import QdrantStore
+from .bnf_chunking import BNF_CHUNKER_VERSION
 from .pdf_parser import PDFParser
-from .semantic_chunker import SemanticChunker
+from .semantic_chunker import SEMANTIC_CHUNKER_VERSION, SemanticChunker
+from .katzung_chunking import KATZUNG_CHUNKER_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +70,25 @@ class Manifest:
         return bool(self.entries.get(doc_id, {}).get("indexed_at"))
 
     def mark_chunked(self, doc: ParsedDocument, n_chunks: int) -> None:
-        self.entries.setdefault(doc.doc_id, {}).update(
+        entry = self.entries.setdefault(doc.doc_id, {})
+        # New chunks invalidate any prior index state for this document.
+        entry.pop("indexed_at", None)
+        entry.pop("indexed_points", None)
+        entry.update(
             {
                 "title": doc.title,
                 "source": doc.source_path,
                 "pages": doc.n_pages,
                 "chunks": n_chunks,
+                "parser_profile": doc.metadata.get("parser_profile"),
+                "parser_version": doc.metadata.get("parser_version"),
+                "chunker_version": (
+                    BNF_CHUNKER_VERSION
+                    if doc.metadata.get("parser_profile") == "bnf"
+                    else KATZUNG_CHUNKER_VERSION
+                    if doc.metadata.get("parser_profile") == "katzung"
+                    else SEMANTIC_CHUNKER_VERSION
+                ),
                 "chunked_at": _now(),
             }
         )
@@ -103,7 +118,7 @@ class IngestionPipeline:
         self.chunks_dir = self.settings.processed_dir / CHUNKS_SUBDIR
         self.chunks_dir.mkdir(parents=True, exist_ok=True)
 
-        self.parser = PDFParser()
+        self.parser = PDFParser(use_layout_analysis=self.settings.pdf_layout_analysis)
         self.encoder = encoder or get_encoder()
         self.chunker = SemanticChunker(self.settings, self.encoder)
         self.store = store or QdrantStore(self.settings)
@@ -198,11 +213,25 @@ class IngestionPipeline:
         logger.info("BM25 stats over %d chunks: avgdl=%.1f", n_docs, encoder.avgdl)
         return encoder
 
-    def stage_index(self, *, recreate: bool = False, force: bool = False) -> dict[str, int]:
+    def stage_index(
+        self,
+        *,
+        recreate: bool = False,
+        force: bool = False,
+        source: str | Path | None = None,
+    ) -> dict[str, int]:
         files = self.all_chunk_files()
         if not files:
             logger.warning("No chunk files in %s — run the chunk stage first", self.chunks_dir)
             return {"documents": 0, "indexed": 0, "skipped": 0}
+        if recreate and source is not None:
+            raise ValueError("Cannot recreate the collection while indexing only one source.")
+        if source is not None:
+            source_doc_ids = {PDFParser.doc_id_for(path) for path in self.discover(source)}
+            files = [path for path in files if path.stem in source_doc_ids]
+            if not files:
+                logger.warning("No staged chunks found for source %s", source)
+                return {"documents": 0, "indexed": 0, "skipped": 0}
 
         bm25 = self.compute_bm25_stats()
 
@@ -238,6 +267,13 @@ class IngestionPipeline:
             texts = [c.text for c in chunks]
             dense = self.encoder.encode(texts, show_progress=True)
             sparse = bm25.encode_documents(texts)
+            if force and not recreate:
+                entry = self.manifest.entries.get(doc_id)
+                if entry:
+                    entry.pop("indexed_at", None)
+                    entry.pop("indexed_points", None)
+                    self.manifest.save()
+                self.store.delete_document(doc_id)
             written = self.store.upsert(chunks, dense, sparse)
 
             self.manifest.mark_indexed(doc_id, written)

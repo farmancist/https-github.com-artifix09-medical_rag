@@ -1,0 +1,59 @@
+{
+  "_comment": "BNF retrieval checks whose expected evidence was confirmed against the source PDF text on the cited PDF pages. This file intentionally contains only verified BNF cases.",
+  "retrieval": [
+    {
+      "id": "bnf-balsalazide-acute-adult",
+      "query": "What is the adult balsalazide dose for an acute ulcerative colitis attack, and how long can it be continued?",
+      "source": "BNF",
+      "category": "verified-dose",
+      "verified": true,
+      "evidence": "BNF PDF p.60 (printed p.41), Balsalazide sodium",
+      "expect_all": ["2.25 g 3 times a day", "12 weeks"]
+    },
+    {
+      "id": "bnf-balsalazide-maintenance",
+      "query": "What adult balsalazide dose is listed for maintenance of ulcerative colitis remission?",
+      "source": "BNF",
+      "category": "verified-dose",
+      "verified": true,
+      "evidence": "BNF PDF p.60 (printed p.41), Balsalazide sodium",
+      "expect_all": ["1.5 g twice daily", "maximum 6 g per day"]
+    },
+    {
+      "id": "bnf-asacol-400-adult-dose",
+      "query": "What adult acute-attack dose is listed for Asacol MR 400 mg tablets?",
+      "source": "BNF",
+      "category": "verified-dose",
+      "verified": true,
+      "evidence": "BNF PDF p.60 (printed p.41), Asacol MR 400 mg tablets",
+      "expect_all": ["ASACOL", "Adult: 2.4 g daily in divided doses"]
+    },
+    {
+      "id": "bnf-carmustine-intravenous-dose",
+      "query": "What does the BNF say about the adult intravenous carmustine dose for brain tumours?",
+      "source": "BNF",
+      "category": "verified-section",
+      "verified": true,
+      "evidence": "BNF PDF p.1000 (printed p.981), Carmustine",
+      "expect_all": ["Carmustine", "BY INTRAVENOUS INFUSION", "consult product literature"]
+    },
+    {
+      "id": "bnf-chlorambucil-dose",
+      "query": "What adult oral dose does the BNF list for some lymphomas and chronic leukaemias treated with chlorambucil?",
+      "source": "BNF",
+      "category": "verified-section",
+      "verified": true,
+      "evidence": "BNF PDF p.1001 (printed p.982), Chlorambucil",
+      "expect_all": ["Chlorambucil", "consult local protocol"]
+    },
+    {
+      "id": "bnf-chlormethine-application",
+      "query": "How often should an adult apply chlormethine gel according to the BNF?",
+      "source": "BNF",
+      "category": "verified-dose",
+      "verified": true,
+      "evidence": "BNF PDF p.1001 (printed p.982), Chlormethine",
+      "expect_all": ["Chlormethine", "Adult: Apply once daily"]
+    }
+  ]
+}

@@ -16,6 +16,7 @@ from typing import Iterable, Sequence
 import numpy as np
 
 from ..config import Settings, get_settings
+from ..device import DeviceInfo, device_info_for, get_device
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,10 @@ class DenseEncoder:
     def __init__(self, settings: Settings | None = None, *, model_name: str | None = None) -> None:
         self.settings = settings or get_settings()
         self.model_name = model_name or self.settings.embedding_model
-        self.device = self.settings.resolve_device()
+        self.device_info: DeviceInfo = (
+            get_device() if self.settings.device == "auto" else device_info_for(self.settings.device)
+        )
+        self.device = self.device_info.backend  # "cuda" | "dml" | "cpu" -- kept for logging/comparisons
         self._model = None
 
     # -- lifecycle ------------------------------------------------------
@@ -50,8 +54,21 @@ class DenseEncoder:
                     "  python scripts/ingest.py --parse-only"
                 ) from exc
 
-            logger.info("Loading embedding model %s on %s", self.model_name, self.device)
-            self._model = SentenceTransformer(self.model_name, device=self.device)
+            logger.info(
+                "Loading embedding model %s | backend=%s torch_device=%s provider=%s",
+                self.model_name,
+                self.device_info.st_backend,
+                self.device_info.torch_device,
+                self.device_info.provider,
+            )
+            onnx_kwargs = (
+                {"backend": "onnx", "model_kwargs": {"provider": self.device_info.provider}}
+                if self.device_info.st_backend == "onnx"
+                else {}
+            )
+            self._model = SentenceTransformer(
+                self.model_name, device=self.device_info.torch_device, **onnx_kwargs
+            )
             self._model.max_seq_length = self.settings.embedding_max_seq_length
         return self._model
 
@@ -82,8 +99,8 @@ class DenseEncoder:
         if override:
             return override
         base = self.settings.embedding_batch_size
-        # The desktop can take much bigger batches than the laptop.
-        return base * 4 if self.device == "cuda" else base
+        # The desktop (CUDA or DirectML) can take much bigger batches than a CPU-only machine.
+        return base * 4 if self.device in ("cuda", "dml") else base
 
     def encode(
         self,

@@ -93,6 +93,8 @@ class MedicalRAGPipeline:
         *,
         doc_ids: Sequence[str] | None = None,
         sections: Sequence[str] | None = None,
+        entity: str | None = None,
+        field: str | None = None,
         top_k: int | None = None,
     ) -> RAGAnswer:
         timings: dict[str, float] = {}
@@ -112,7 +114,7 @@ class MedicalRAGPipeline:
             logger.info("Expanded via %s -> %s", expanded.method, expanded.variants)
 
         # ---- 3. hybrid retrieval ----
-        query_filter: qmodels.Filter | None = build_filter(doc_ids=doc_ids, sections=sections)
+        query_filter: qmodels.Filter | None = build_filter(doc_ids=doc_ids, sections=sections, entity=entity, field=field)
         with self._timed(timings, "retrieval"):
             candidates = self.retriever.retrieve(expanded, query_filter=query_filter)
 
@@ -257,9 +259,13 @@ class MedicalRAGPipeline:
         *,
         top_k: int | None = None,
         rerank: bool = True,
+        doc_ids: Sequence[str] | None = None,
+        entity: str | None = None,
+        field: str | None = None,
     ) -> list[RetrievedChunk]:
         expanded = self.expander.expand(query)
-        candidates = self.retriever.retrieve(expanded)
+        query_filter = build_filter(doc_ids=doc_ids, entity=entity, field=field)
+        candidates = self.retriever.retrieve(expanded, query_filter=query_filter)
         if rerank and candidates:
             return self.reranker.rerank(query, candidates, top_k=top_k)
         return candidates[: (top_k or self.settings.final_top_k)]

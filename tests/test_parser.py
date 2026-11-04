@@ -7,6 +7,9 @@ real behaviour lives. They run without opening a PDF, so they work everywhere.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from medical_rag.ingest.pdf_parser import (
     PDFParser,
@@ -162,6 +165,217 @@ class TestHeadingDetection:
         assert not _looks_like_heading("contraindications for use")
 
 
+class TestPageBlockOrder:
+    def test_heading_precedes_table_in_reading_order(self) -> None:
+        class Table:
+            bbox = (10, 120, 400, 300)
+
+            @staticmethod
+            def extract():
+                return [["Indication", "Dose"], ["Infection", "150 mg"]]
+
+        class Page:
+            @staticmethod
+            def find_tables():
+                return SimpleNamespace(tables=[Table()])
+
+            @staticmethod
+            def get_text(kind):
+                assert kind == "blocks"
+                return [(10, 80, 150, 105, "Clindamycin", 0, 0)]
+
+        page = Page()
+        blocks = PDFParser(use_layout_analysis=True)._page_blocks(
+            SimpleNamespace(load_page=lambda _index: page), 0
+        )
+
+        assert blocks[0] == ("Clindamycin", "text")
+        assert blocks[1][1] == "table"
+        assert "150 mg" in blocks[1][0]
+
+    def test_line_based_table_detection_fallback_when_layout_finds_none(self) -> None:
+        class Table:
+            bbox = (10, 120, 400, 300)
+
+            @staticmethod
+            def extract():
+                return [["Indication", "Dose"], ["Infection", "150 mg"]]
+
+        calls = []
+
+        class Page:
+            layout_information = []
+
+            @staticmethod
+            def find_tables(**kwargs):
+                calls.append(kwargs)
+                return SimpleNamespace(tables=[Table()] if kwargs else [])
+
+            @staticmethod
+            def get_text(kind):
+                assert kind == "blocks"
+                return []
+
+        blocks = PDFParser(use_layout_analysis=True)._page_blocks(
+            SimpleNamespace(load_page=lambda _index: Page()), 0
+        )
+
+        assert calls == [{}, {"use_layout": False}]
+        assert len(blocks) == 1
+        assert blocks[0][1] == "table"
+        assert "150 mg" in blocks[0][0]
+
+    def test_layout_disabled_uses_line_based_detection_directly(self) -> None:
+        calls = []
+
+        class Page:
+            @staticmethod
+            def find_tables(**kwargs):
+                calls.append(kwargs)
+                return SimpleNamespace(tables=[])
+
+            @staticmethod
+            def get_text(kind):
+                assert kind == "blocks"
+                return []
+
+        PDFParser(use_layout_analysis=False)._page_blocks(
+            SimpleNamespace(load_page=lambda _index: Page()), 0
+        )
+
+        assert calls == [{"use_layout": False}]
+
+
+    def test_e0e7f5_panel_with_dose_label_is_a_dose_box(self) -> None:
+        from medical_rag.ingest import pdf_parser
+
+        doc = pdf_parser.pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        dose_fill = (224 / 255, 231 / 255, 245 / 255)
+        page.draw_rect((50, 80, 285, 220), color=None, fill=dose_fill)
+        page.insert_text((62, 105), "INDICATIONS AND DOSE", fontsize=12)
+        page.insert_text((62, 132), "Pain and inflammation", fontsize=11)
+        page.insert_text((72, 157), "Adult: 1 g once daily", fontsize=11)
+
+        # The same fill without the BNF dose label is a callout, not a dose box.
+        page.draw_rect((310, 80, 550, 220), color=None, fill=dose_fill)
+        page.insert_text((322, 105), "IMPORTANT SAFETY INFORMATION", fontsize=10)
+        page.insert_text((322, 130), "Use with care and monitor the patient.", fontsize=10)
+        page.insert_text((50, 260), "Nearby text remains outside the dose box.", fontsize=10)
+
+        blocks = PDFParser(extract_tables=False)._page_blocks(doc, 0)
+        doc.close()
+
+        dose = [text for text, kind in blocks if kind == "dose_box"]
+        assert len(dose) == 1
+        assert "Adult: 1 g once daily" in dose[0]
+        assert "IMPORTANT SAFETY INFORMATION" not in dose[0]
+        assert any(
+            kind == "text" and "Nearby text remains outside" in text
+            for text, kind in blocks
+        )
+
+
+class TestLayoutActivation:
+    def test_parse_activates_layout_when_extracting_tables(self, monkeypatch) -> None:
+        import pymupdf.layout
+
+        from medical_rag.ingest import pdf_parser
+
+        activated = []
+        monkeypatch.setattr(pymupdf.layout, "activate", lambda: activated.append(True))
+        doc = SimpleNamespace(
+            page_count=0,
+            metadata={},
+            close=lambda: None,
+        )
+        monkeypatch.setattr(pdf_parser.pymupdf, "open", lambda _path: doc)
+
+        PDFParser(use_layout_analysis=True).parse("test.pdf")
+
+        assert activated == [True]
+
+    def test_parse_does_not_activate_layout_without_table_extraction(self, monkeypatch) -> None:
+        import pymupdf.layout
+
+        from medical_rag.ingest import pdf_parser
+
+        activated = []
+        monkeypatch.setattr(pymupdf.layout, "activate", lambda: activated.append(True))
+        doc = SimpleNamespace(
+            page_count=0,
+            metadata={},
+            close=lambda: None,
+        )
+        monkeypatch.setattr(pdf_parser.pymupdf, "open", lambda _path: doc)
+
+        PDFParser(extract_tables=False).parse("test.pdf")
+
+        assert activated == []
+
+    def test_layout_analysis_is_disabled_by_default(self) -> None:
+        assert PDFParser().use_layout_analysis is False
+
+    def test_parse_preserves_original_page_numbers_for_selected_pages(self, monkeypatch) -> None:
+        from medical_rag.ingest import pdf_parser
+
+        pages = [
+            SimpleNamespace(get_text=lambda: "first page vocabulary"),
+            SimpleNamespace(get_text=lambda: "second page vocabulary"),
+            SimpleNamespace(get_text=lambda: "third page vocabulary"),
+        ]
+        doc = SimpleNamespace(
+            page_count=3,
+            metadata={},
+            load_page=lambda index: pages[index],
+            close=lambda: None,
+        )
+        monkeypatch.setattr(pdf_parser.pymupdf, "open", lambda _path: doc)
+        parser = PDFParser(extract_tables=False)
+        monkeypatch.setattr(
+            parser,
+            "_page_blocks",
+            lambda _doc, index, _vocab: [(f"Page {index + 1} text long enough", "text")],
+        )
+
+        parsed = parser.parse("test.pdf", page_indices=[0, 2])
+
+        assert [block.page for block in parsed.blocks] == [1, 3]
+        assert parsed.metadata["pages_parsed"] == 2
+
+    def test_bnf_selected_pages_use_bnf_profile(self, monkeypatch) -> None:
+        from medical_rag.ingest import pdf_parser
+        from medical_rag.models import ParsedDocument
+
+        doc = SimpleNamespace(page_count=3, metadata={}, close=lambda: None)
+        monkeypatch.setattr(pdf_parser.pymupdf, "open", lambda _path: doc)
+        parser = PDFParser()
+        calls = []
+
+        def parse_bnf(_doc, path, pages):
+            calls.append(list(pages))
+            return ParsedDocument(
+                doc_id="bnf", source_path=str(path), title="BNF", n_pages=3,
+                metadata={"parser_profile": "bnf", "pages_parsed": len(pages)},
+            )
+
+        monkeypatch.setattr(parser, "_parse_bnf", parse_bnf)
+        parsed = parser.parse("BNF-sample.pdf", page_indices=[0, 2])
+        assert calls == [[0, 2]]
+        assert parsed.metadata["parser_profile"] == "bnf"
+
+    def test_parse_rejects_conflicting_or_invalid_page_selection(self, monkeypatch) -> None:
+        from medical_rag.ingest import pdf_parser
+
+        doc = SimpleNamespace(page_count=2, close=lambda: None)
+        monkeypatch.setattr(pdf_parser.pymupdf, "open", lambda _path: doc)
+
+        with pytest.raises(ValueError, match="cannot be used together"):
+            PDFParser().parse("test.pdf", max_pages=1, page_indices=[0])
+        with pytest.raises(ValueError, match="between 0 and 1"):
+            PDFParser().parse("test.pdf", page_indices=[2])
+
+
 class TestDocId:
     def test_is_stable(self) -> None:
         assert PDFParser.doc_id_for("a/b/book.pdf") == PDFParser.doc_id_for("a/b/book.pdf")
@@ -175,3 +389,15 @@ class TestDocId:
 
     def test_different_files_differ(self) -> None:
         assert PDFParser.doc_id_for("bnf.pdf") != PDFParser.doc_id_for("oxford.pdf")
+
+
+def test_continuation_table_row_is_not_promoted_to_header() -> None:
+    class ContinuationTable:
+        @staticmethod
+        def extract():
+            return [["Maintenance dose", "1 g daily"], ["Adult", "2 g daily"]]
+
+    markdown = PDFParser._table_to_markdown(ContinuationTable())
+    assert markdown.splitlines()[0] == "| Content |  |"
+    assert "| Maintenance dose | 1 g daily |" in markdown
+    assert "| Adult | 2 g daily |" in markdown

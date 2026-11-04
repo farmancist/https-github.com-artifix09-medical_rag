@@ -206,6 +206,23 @@ class TestOutputGuardrail:
         verdicts, _ = self.guard().check("Give 500 mg orally [1].", sources)
         assert all(v.severity != "block" for v in verdicts)
 
+    def test_microgram_spelling_variants_are_equivalent(self) -> None:
+        sources = [make_chunk("Maintenance 125–250 micrograms daily.")]
+        verdicts, _ = self.guard().check(
+            "The maintenance dose is 125 µg to 250 μg daily [1].", sources
+        )
+        assert all(v.severity != "block" for v in verdicts)
+
+    def test_unit_alias_does_not_allow_a_different_dose_unit(self) -> None:
+        sources = [make_chunk("Maintenance 125–250 micrograms daily.")]
+        verdicts, _ = self.guard().check("The dose is 250 mg daily [1].", sources)
+        assert any(v.code == "unsupported_numeric" for v in verdicts)
+
+    def test_unlisted_endpoint_of_range_is_rejected(self) -> None:
+        sources = [make_chunk("Maintenance 125–250 micrograms daily.")]
+        verdicts, _ = self.guard().check("The dose is 125–300 µg daily [1].", sources)
+        assert any(v.code == "unsupported_numeric" for v in verdicts)
+
     def test_disclaimer_is_appended_once(self) -> None:
         guard = self.guard()
         once = guard.apply_disclaimer("Answer text.")

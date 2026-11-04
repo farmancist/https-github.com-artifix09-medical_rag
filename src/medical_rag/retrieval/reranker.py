@@ -22,6 +22,7 @@ import math
 from typing import Sequence
 
 from ..config import Settings, get_settings
+from ..device import DeviceInfo, device_info_for, get_device
 from ..models import RetrievedChunk
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,10 @@ class CrossEncoderReranker:
     def __init__(self, settings: Settings | None = None, *, model_name: str | None = None) -> None:
         self.settings = settings or get_settings()
         self.model_name = model_name or self.settings.reranker_model
-        self.device = self.settings.resolve_device()
+        self.device_info: DeviceInfo = (
+            get_device() if self.settings.device == "auto" else device_info_for(self.settings.device)
+        )
+        self.device = self.device_info.backend  # "cuda" | "dml" | "cpu" -- kept for logging/comparisons
         self._model = None
         self._max_length = 512
 
@@ -47,9 +51,23 @@ class CrossEncoderReranker:
         if self._model is None:
             from sentence_transformers import CrossEncoder
 
-            logger.info("Loading reranker %s on %s", self.model_name, self.device)
+            logger.info(
+                "Loading reranker %s | backend=%s torch_device=%s provider=%s",
+                self.model_name,
+                self.device_info.st_backend,
+                self.device_info.torch_device,
+                self.device_info.provider,
+            )
+            onnx_kwargs = (
+                {"backend": "onnx", "model_kwargs": {"provider": self.device_info.provider}}
+                if self.device_info.st_backend == "onnx"
+                else {}
+            )
             self._model = CrossEncoder(
-                self.model_name, device=self.device, max_length=self._max_length
+                self.model_name,
+                device=self.device_info.torch_device,
+                max_length=self._max_length,
+                **onnx_kwargs,
             )
         return self._model
 

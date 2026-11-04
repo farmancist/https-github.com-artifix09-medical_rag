@@ -198,6 +198,108 @@ class TestSemanticChunking:
         assert len(table_chunks) == 1
         assert table_chunks[0].metadata.get("has_table") is True
 
+    def test_bnf_split_table_keeps_provenance_and_neutral_continuation_header(self) -> None:
+        table = "| Content |\n|---|\n" + "\n".join(
+            f"| Maintenance dose row {i} for Naproxen and additional clinical detail |"
+            for i in range(40)
+        )
+        doc = ParsedDocument(
+            doc_id="bnf", source_path="/tmp/bnf.pdf", title="BNF reference",
+            n_pages=1, metadata={"parser_profile": "bnf"},
+            blocks=[PageBlock(
+                text=table, page=61, section="Naproxen", block_type="table",
+                metadata={"entity": "Naproxen", "field": "INDICATIONS AND DOSE",
+                          "printed_page": "53", "pdf_page": 61},
+            )],
+        )
+        chunks = chunker(chunk_max_tokens=35, chunk_overlap_ratio=0.0).chunk_document(doc)
+        assert len(chunks) > 1
+        for chunk in chunks:
+            assert "| Content |" in chunk.text
+            assert chunk.metadata["entity"] == "Naproxen"
+            assert chunk.metadata["field"] == "INDICATIONS AND DOSE"
+            assert chunk.metadata["printed_page"] == "53"
+            assert chunk.metadata["pdf_page_start"] == 61
+    def test_bnf_chunks_keep_indications_separate(self) -> None:
+        doc = ParsedDocument(
+            doc_id="bnf", source_path="/tmp/bnf.pdf", title="BNF reference",
+            n_pages=1, metadata={"parser_profile": "bnf"},
+            blocks=[
+                PageBlock(
+                    text="Adult: 1 g once daily.", page=1282, section="Naproxen",
+                    metadata={"entity": "Naproxen", "field": "INDICATIONS AND DOSE",
+                              "indication": "Rheumatic disease", "route": "BY MOUTH",
+                              "dose_box": True, "printed_page": "1263"},
+                ),
+                PageBlock(
+                    text="Adult: 500 mg every 6 hours.", page=1282, section="Naproxen",
+                    metadata={"entity": "Naproxen", "field": "INDICATIONS AND DOSE",
+                              "indication": "Dysmenorrhoea", "route": "BY MOUTH",
+                              "dose_box": True, "printed_page": "1263"},
+                ),
+            ],
+        )
+        chunks = chunker(chunk_overlap_ratio=0.0).chunk_document(doc)
+        assert len(chunks) == 2
+        assert "Rheumatic disease" in chunks[0].text
+        assert "Dysmenorrhoea" in chunks[1].text
+        assert chunks[0].metadata["entity"] == chunks[1].metadata["entity"] == "Naproxen"
+
+    def test_dose_box_is_kept_in_its_own_chunk(self) -> None:
+        doc = ParsedDocument(
+            doc_id="bnf",
+            source_path="/tmp/bnf.pdf",
+            title="BNF reference",
+            n_pages=1,
+            blocks=[
+                PageBlock(text="Naproxen preparation details are here.", page=1, section="Naproxen"),
+                PageBlock(
+                    text="INDICATIONS AND DOSE Pain and inflammation Adult: 1 g once daily.",
+                    page=1,
+                    section="Naproxen",
+                    block_type="dose_box",
+                ),
+                PageBlock(text="Monitoring and cautions are described here.", page=1, section="Naproxen"),
+            ],
+        )
+        chunks = chunker(chunk_overlap_ratio=0.5).chunk_document(doc)
+        dose = [c for c in chunks if c.metadata.get("has_dose_box")]
+
+        assert len(dose) == 1
+        assert "Adult: 1 g once daily" in dose[0].text
+        assert "Naproxen preparation details" not in dose[0].text
+        assert "Monitoring and cautions" not in dose[0].text
+
+    def test_bnf_dose_chunk_header_includes_preparation(self) -> None:
+        preparation = "ASACOL MR 400MG TABLETS"
+        doc = ParsedDocument(
+            doc_id="bnf",
+            source_path="/tmp/bnf.pdf",
+            title="BNF reference",
+            n_pages=1,
+            metadata={"parser_profile": "bnf"},
+            blocks=[
+                PageBlock(
+                    text="Adult: 2.4 g daily in divided doses",
+                    page=60,
+                    section="Mesalazine",
+                    metadata={
+                        "entity": "Mesalazine",
+                        "field": "INDICATIONS AND DOSE",
+                        "preparation": preparation,
+                        "dose_box": True,
+                        "printed_page": "41",
+                    },
+                ),
+            ],
+        )
+
+        chunks = chunker(chunk_overlap_ratio=0.0).chunk_document(doc)
+
+        assert len(chunks) == 1
+        assert preparation in chunks[0].text
+        assert chunks[0].metadata["preparation"] == preparation
+
     def test_section_change_forces_a_break(self) -> None:
         doc = ParsedDocument(
             doc_id="doc",
@@ -211,6 +313,37 @@ class TestSemanticChunking:
         )
         chunks = chunker(chunk_overlap_ratio=0.0).chunk_document(doc)
         assert len(chunks) == 2
+
+    def test_overlap_does_not_cross_section_boundary(self) -> None:
+        doc = ParsedDocument(
+            doc_id="doc",
+            source_path="/tmp/d.pdf",
+            title="T",
+            n_pages=1,
+            blocks=[
+                PageBlock(
+                    text="Vancomycin previous details are here. "
+                    "Vancomycin monitoring belongs only to its own section.",
+                    page=1,
+                    section="Vancomycin",
+                ),
+                PageBlock(
+                    text=(
+                        "Clindamycin dosing information is specific to this section. "
+                        "Clindamycin should be considered with the appropriate indication "
+                        "and patient details."
+                    ),
+                    page=1,
+                    section="Clindamycin",
+                ),
+            ],
+        )
+
+        chunks = chunker(chunk_overlap_ratio=0.5).chunk_document(doc)
+        clindamycin_chunk = next(c for c in chunks if c.section == "Clindamycin")
+
+        assert "Clindamycin" in clindamycin_chunk.text
+        assert "Vancomycin monitoring belongs only to its own section" not in clindamycin_chunk.text
 
     def test_empty_document_yields_nothing(self) -> None:
         assert chunker().chunk_document(make_doc([])) == []
